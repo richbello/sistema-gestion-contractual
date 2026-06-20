@@ -1,0 +1,1 @@
+﻿window.BACKEND_URL = "https://sistema-gestion-contractual.onrender.com";
