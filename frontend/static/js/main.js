@@ -2,7 +2,7 @@
    Sistema de Gestión Contractual y Financiera — lógica de interfaz
    ========================================================================== */
 
-const API_BASE = window.location.origin;
+const API_BASE = (typeof window.BACKEND_URL === "string" ? window.BACKEND_URL : "").replace(/\/$/, "");
 
 const MODULOS = {
   extraccion:    { eyebrow: "Módulo 01", titulo: "Extracción de causaciones" },
@@ -130,6 +130,37 @@ configurarDropzoneUnico("drop-plantilla-pac", "input-plantilla-pac", "lista-plan
 configurarDropzoneUnico("drop-reporte-pac", "input-reporte-pac", "lista-reporte-pac");
 configurarDropzoneUnico("drop-plantilla-ec", "input-plantilla-ec", "lista-plantilla-ec");
 configurarDropzoneUnico("drop-historico-ec", "input-historico-ec", "lista-historico-ec");
+
+/* ---------------------------- Estado del backend ---------------------------- */
+/* Servicios gratuitos como Render "duermen" el backend tras inactividad y la
+   primera petición puede tardar 30-50s en responder mientras despierta. Esta
+   verificación evita que la primera persona que use el formulario piense que
+   está roto: muestra un aviso visible mientras el servidor arranca. */
+
+async function verificarBackend() {
+  const banner = document.getElementById("banner-backend");
+  if (!API_BASE) { banner.hidden = true; return; }
+
+  banner.hidden = false;
+  banner.textContent = "Conectando con el servidor… puede tardar hasta 1 minuto si está inactivo.";
+  banner.className = "banner-backend banner-cargando";
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/salud`, { method: "GET" });
+    if (resp.ok) {
+      banner.className = "banner-backend banner-listo";
+      banner.textContent = "Servidor conectado. Todo listo para procesar.";
+      setTimeout(() => { banner.hidden = true; }, 2500);
+    } else {
+      throw new Error("respuesta no ok");
+    }
+  } catch (err) {
+    banner.className = "banner-backend banner-error";
+    banner.textContent = "No se pudo conectar con el servidor. Intenta de nuevo en unos segundos o recarga la página.";
+  }
+}
+
+verificarBackend();
 
 /* ---------------------------- Utilidades UI ---------------------------- */
 
