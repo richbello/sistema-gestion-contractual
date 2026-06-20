@@ -230,7 +230,7 @@ document.getElementById("form-extraccion").addEventListener("submit", async (e) 
       mostrarAlerta("alerta-extraccion", `Algunos archivos no se pudieron procesar: ${data.errores.slice(0, 5).join("; ")}${data.errores.length > 5 ? "…" : ""}`);
     }
 
-    document.getElementById("link-descarga-extraccion").href = data.descarga;
+    document.getElementById("link-descarga-extraccion").href = API_BASE + data.descarga;
     document.getElementById("resultados-extraccion").classList.add("visible");
 
   } catch (err) {
@@ -276,7 +276,7 @@ document.getElementById("form-plantilla").addEventListener("submit", async (e) =
     cont.appendChild(crearMetrica(data.filas_con_codigo_44, "Con honorarios (cód. 44)", "ocre"));
     cont.appendChild(crearMetrica(data.tiene_columnas_honorarios ? "Sí" : "No", "Columnas de honorarios detectadas"));
 
-    document.getElementById("link-descarga-plantilla").href = data.descarga;
+    document.getElementById("link-descarga-plantilla").href = API_BASE + data.descarga;
     document.getElementById("resultados-plantilla").classList.add("visible");
 
   } catch (err) {
@@ -352,7 +352,7 @@ document.getElementById("form-pac").addEventListener("submit", async (e) => {
       tbody.appendChild(tr);
     });
 
-    document.getElementById("link-descarga-pac").href = data.descarga;
+    document.getElementById("link-descarga-pac").href = API_BASE + data.descarga;
     document.getElementById("resultados-pac").classList.add("visible");
 
   } catch (err) {
@@ -405,7 +405,7 @@ document.getElementById("form-estadocuenta").addEventListener("submit", async (e
     cont.appendChild(crearMetrica(formatearMoneda(data.saldo_final), "Saldo final", "ocre"));
 
     document.getElementById("nombre-descarga-ec").textContent = `Estado_Cuenta_${data.contrato}.xlsx`;
-    document.getElementById("link-descarga-estadocuenta").href = data.descarga;
+    document.getElementById("link-descarga-estadocuenta").href = API_BASE + data.descarga;
     document.getElementById("resultados-estadocuenta").classList.add("visible");
 
   } catch (err) {
