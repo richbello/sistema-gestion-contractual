@@ -11,7 +11,7 @@ def create_app():
     app = Flask(
         __name__,
         static_folder=os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "static"),
-        template_folder=os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "templates"),
+        static_url_path="/static",
     )
 
     app.config["UPLOAD_FOLDER"] = os.path.join(os.path.dirname(__file__), "..", "uploads")
@@ -35,5 +35,9 @@ def create_app():
     app.register_blueprint(plantilla_bp, url_prefix="/api/plantilla-pagos")
     app.register_blueprint(cuadre_bp, url_prefix="/api/cuadre-pac")
     app.register_blueprint(estado_cuenta_bp, url_prefix="/api/estado-cuenta")
+
+    @app.route("/api/salud")
+    def salud():
+        return {"ok": True, "estado": "activo"}
 
     return app
