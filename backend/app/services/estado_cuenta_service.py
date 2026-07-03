@@ -174,3 +174,73 @@ def generar_estado_cuenta(ruta_plantilla, ruta_insumo, contrato_buscado, ruta_sa
                 os.unlink(db_path)
             except:
                 pass
+
+
+def generar_estado_cuenta_desde_datos(ruta_plantilla, pagos, contrato_buscado, ruta_salida_excel):
+    """
+    Igual que generar_estado_cuenta, pero recibe los pagos ya filtrados
+    (lista de diccionarios) en lugar del histórico completo. El navegador
+    filtra; el backend solo llena la plantilla con openpyxl, preservando
+    colores, bordes, celdas fusionadas, tablas y estilos.
+    """
+    if not pagos:
+        return {"ok": False, "mensaje": f"No se encontró información para: {contrato_buscado}"}
+
+    primer = pagos[0]
+
+    wb = openpyxl.load_workbook(ruta_plantilla)
+    ws = wb.active
+
+    fila_inicio = 17
+    fila_fin = fila_inicio + len(pagos) - 1
+    for f in range(fila_inicio, fila_fin + 1):
+        _desmerge_fila_datos(ws, f)
+
+    mmap = _build_merge_map(ws)
+
+    try:
+        val_contrato = float(primer.get(COL_VALOR_CTO, 0) or 0)
+    except Exception:
+        val_contrato = 0
+
+    _escribir_coord(ws, 'D5', contrato_buscado, mmap=mmap)
+    _escribir_coord(ws, 'D6', str(primer.get('Nombre', '')), mmap=mmap)
+    _escribir_coord(ws, 'D7', val_contrato, fmt_moneda=True, mmap=mmap)
+    _escribir_coord(ws, 'D8', primer.get(COL_FECHA_INICIO, ''), mmap=mmap)
+    _escribir_coord(ws, 'H5', _limpiar(primer.get('Proveedor', '')), mmap=mmap)
+    _escribir_coord(ws, 'H6', _limpiar(primer.get('Nº identificación', '')), mmap=mmap)
+    _escribir_coord(ws, 'H7', _limpiar(primer.get('Numero RP', '')), mmap=mmap)
+    _escribir_coord(ws, 'H8', primer.get(COL_FECHA_FIN, ''), mmap=mmap)
+
+    fila_actual = fila_inicio
+    saldo_acumulado = val_contrato
+
+    for i, fila in enumerate(pagos, start=1):
+        try:
+            monto = float(fila.get('Valor Bruto', 0) or 0)
+        except Exception:
+            monto = 0
+        saldo_acumulado -= monto
+
+        _escribir_rc(ws, fila_actual, 2, i, mmap=mmap)
+        _escribir_rc(ws, fila_actual, 3, fila.get('Texto cabecera documento', ''), mmap=mmap)
+        _escribir_rc(ws, fila_actual, 4, monto, fmt_moneda=True, mmap=mmap)
+        _escribir_rc(ws, fila_actual, 5, saldo_acumulado, fmt_moneda=True, mmap=mmap)
+        _escribir_rc(ws, fila_actual, 6, _limpiar(fila.get('Doc.compensación', '')), mmap=mmap)
+        _escribir_rc(ws, fila_actual, 7, fila.get('Fecha de pago', ''), mmap=mmap)
+        _escribir_rc(ws, fila_actual, 8, _limpiar(fila.get('Numero RP', '')), mmap=mmap)
+        _escribir_rc(ws, fila_actual, 9, _limpiar(fila.get(COL_CDP_EXTERNO, '')), mmap=mmap)
+        _escribir_rc(ws, fila_actual, 10, _limpiar(fila.get(COL_CRP_EXTERNO, '')), mmap=mmap)
+
+        fila_actual += 1
+
+    wb.save(ruta_salida_excel)
+
+    return {
+        "ok": True,
+        "contrato": contrato_buscado,
+        "pagos_encontrados": len(pagos),
+        "valor_contrato": val_contrato,
+        "saldo_final": float(saldo_acumulado),
+        "archivo_salida": ruta_salida_excel,
+    }
