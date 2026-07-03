@@ -68,3 +68,30 @@ def procesar():
     except Exception as e:
         return jsonify({"ok": False, "mensaje": str(e)}), 500
 
+
+
+@bp.route('/procesar-lite', methods=['POST'])
+def procesar_lite():
+    import json, os, tempfile
+    from flask import request, jsonify, send_file
+    try:
+        from app.services.estado_cuenta_service import generar_estado_cuenta_desde_datos
+    except ImportError:
+        from ..services.estado_cuenta_service import generar_estado_cuenta_desde_datos
+    try:
+        plantilla = request.files.get('plantilla')
+        contrato = (request.form.get('contrato') or '').strip()
+        pagos_raw = request.form.get('pagos')
+        if not plantilla or not contrato or not pagos_raw:
+            return jsonify({"ok": False, "mensaje": "Faltan datos"}), 400
+        pagos = json.loads(pagos_raw)
+        tmp_dir = tempfile.mkdtemp()
+        ruta_plantilla = os.path.join(tmp_dir, 'plantilla.xlsx')
+        plantilla.save(ruta_plantilla)
+        ruta_salida = os.path.join(tmp_dir, 'Estado_de_Cuenta_' + contrato + '.xlsx')
+        resultado = generar_estado_cuenta_desde_datos(ruta_plantilla, pagos, contrato, ruta_salida)
+        if not resultado.get('ok'):
+            return jsonify(resultado), 400
+        return send_file(ruta_salida, as_attachment=True, download_name='Estado_de_Cuenta_' + contrato + '.xlsx')
+    except Exception as e:
+        return jsonify({"ok": False, "mensaje": str(e)}), 500
