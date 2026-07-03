@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', function() {
         estadoDiv.style.display = 'block';
 
         try {
-            if (!window.XLSX) throw new Error('SheetJS no cargado');
+            if (!window.XLSX) throw new Error('XLSX no cargado');
 
             const contratoBuscado = inputContrato.value.trim();
             const historicoData = await inputHistorico.files[0].arrayBuffer();
@@ -38,28 +38,29 @@ document.addEventListener('DOMContentLoaded', function() {
             const plantillaWB = XLSX.read(new Uint8Array(plantillaData), { type: 'array' });
             const ws = plantillaWB.Sheets[plantillaWB.SheetNames[0]];
 
-            ws['D5'] = { v: contratoBuscado };
-            ws['D6'] = { v: String(primer['Nombre'] || '') };
-            ws['D7'] = { v: Number(primer['VALOR FINAL DEL CONTRATO']) || 0 };
-            ws['D8'] = { v: String(primer['FECHA INICIAL DE CONTRATO'] || '') };
-            ws['H5'] = { v: String(primer['Proveedor'] || '') };
-            ws['H6'] = { v: String(primer['Nº identificación'] || '') };
-            ws['H7'] = { v: String(primer['Numero RP'] || '') };
-            ws['H8'] = { v: String(primer['FECHA DE TERMINACION FINAL'] || '') };
+            // Escribir valores en celdas específicas sin perder formato
+            ws['D5'] = { v: contratoBuscado, t: 's' };
+            ws['D6'] = { v: String(primer['Nombre'] || ''), t: 's' };
+            ws['D7'] = { v: Number(primer['VALOR FINAL DEL CONTRATO']) || 0, t: 'n' };
+            ws['D8'] = { v: String(primer['FECHA INICIAL DE CONTRATO'] || ''), t: 's' };
+            ws['H5'] = { v: String(primer['Proveedor'] || ''), t: 's' };
+            ws['H6'] = { v: String(primer['Nº identificación'] || ''), t: 's' };
+            ws['H7'] = { v: String(primer['Numero RP'] || ''), t: 's' };
+            ws['H8'] = { v: String(primer['FECHA DE TERMINACION FINAL'] || ''), t: 's' };
 
             let fila = 17, saldo = Number(primer['VALOR FINAL DEL CONTRATO']) || 0;
             pagos.forEach((p, i) => {
                 const monto = Number(p['Valor Bruto']) || 0;
                 saldo -= monto;
-                ws[`B${fila}`] = { v: i + 1 };
-                ws[`C${fila}`] = { v: String(p['Texto cabecera documento'] || '') };
-                ws[`D${fila}`] = { v: monto };
-                ws[`E${fila}`] = { v: saldo };
-                ws[`F${fila}`] = { v: String(p['Doc.compensación'] || '') };
-                ws[`G${fila}`] = { v: String(p['Fecha de pago'] || '') };
-                ws[`H${fila}`] = { v: String(p['Numero RP'] || '') };
-                ws[`I${fila}`] = { v: String(p['CDP Externo'] || '') };
-                ws[`J${fila}`] = { v: String(p['CRP Externo'] || '') };
+                ws[`B${fila}`] = { v: i + 1, t: 'n' };
+                ws[`C${fila}`] = { v: String(p['Texto cabecera documento'] || ''), t: 's' };
+                ws[`D${fila}`] = { v: monto, t: 'n' };
+                ws[`E${fila}`] = { v: saldo, t: 'n' };
+                ws[`F${fila}`] = { v: String(p['Doc.compensación'] || ''), t: 's' };
+                ws[`G${fila}`] = { v: String(p['Fecha de pago'] || ''), t: 's' };
+                ws[`H${fila}`] = { v: String(p['Numero RP'] || ''), t: 's' };
+                ws[`I${fila}`] = { v: String(p['CDP Externo'] || ''), t: 's' };
+                ws[`J${fila}`] = { v: String(p['CRP Externo'] || ''), t: 's' };
                 fila++;
             });
 
