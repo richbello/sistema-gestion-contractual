@@ -4,9 +4,9 @@ import pandas as pd
 from openpyxl import load_workbook
 import os
 
-bp = Blueprint('estado_cuenta', __name__)
+estado_cuenta_bp = Blueprint('estado_cuenta', __name__)
 
-@bp.route('/procesar', methods=['POST'])
+@estado_cuenta_bp.route('/procesar', methods=['POST'])
 @cross_origin()
 def procesar():
     try:
@@ -70,7 +70,7 @@ def procesar():
 
 
 
-@bp.route('/procesar-lite', methods=['POST'])
+@estado_cuenta_bp.route('/procesar-lite', methods=['POST'])
 def procesar_lite():
     import json, os, tempfile
     from flask import request, jsonify, send_file
