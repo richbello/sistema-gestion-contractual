@@ -5,22 +5,17 @@ Adaptado del script original de Colab: busca todos los pagos de un
 contrato en el histórico y llena la plantilla oficial de "Estado de
 Cuenta" (.xlsx con celdas fusionadas) respetando el formato.
 
-Versión mejorada: lee el histórico en chunks con openpyxl para evitar errores de memoria
-en Render con archivos grandes.
+Versión mejorada: procesa el histórico sin cargar todo en memoria.
 """
 import os
 import openpyxl
 from openpyxl.utils import range_boundaries, column_index_from_string
-import pandas as pd
 
 COL_CDP_EXTERNO = 'CDP Externo'
 COL_CRP_EXTERNO = 'CRP Externo'
 COL_FECHA_INICIO = 'FECHA INICIAL DE CONTRATO'
 COL_FECHA_FIN = 'FECHA DE TERMINACION FINAL'
 COL_VALOR_CTO = 'VALOR FINAL DEL CONTRATO'
-
-# Tamaño del chunk para lectura eficiente
-CHUNK_SIZE = 5000
 
 
 def _limpiar(dato):
@@ -69,86 +64,69 @@ def generar_estado_cuenta(ruta_plantilla, ruta_insumo, contrato_buscado, ruta_sa
     Busca los pagos del contrato en el histórico, llena la plantilla y
     guarda el resultado en ruta_salida_excel. Retorna un resumen.
     
-    Lee el histórico en chunks con openpyxl para evitar errores de memoria con archivos grandes.
+    Procesa sin cargar todo en memoria: lee fila por fila, filtra y escribe.
     """
     try:
-        # Leer el histórico en chunks usando openpyxl
+        # Leer histórico y extraer datos
         wb_insumo = openpyxl.load_workbook(ruta_insumo, data_only=True)
         ws_insumo = wb_insumo.active
         
-        # Obtener encabezados de la primera fila
+        # Obtener encabezados
         headers = {}
         for col_idx, cell in enumerate(ws_insumo[1], start=1):
-            headers[col_idx] = str(cell.value).strip() if cell.value else ""
+            col_name = str(cell.value).strip() if cell.value else f"Col{col_idx}"
+            headers[col_idx] = col_name
         
-        # Procesar filas en chunks
-        pagos_list = []
-        primer_fila_data = None
+        # Procesar fila por fila, mantener solo datos necesarios
+        pagos_data = []
+        primer_fila = None
         
-        chunk = []
-        for row_idx, row in enumerate(ws_insumo.iter_rows(min_row=2, values_only=True), start=2):
-            # Convertir fila a diccionario
+        for row in ws_insumo.iter_rows(min_row=2, values_only=True):
             row_dict = {}
             for col_idx, valor in enumerate(row, start=1):
                 col_name = headers.get(col_idx, f"Col{col_idx}")
                 row_dict[col_name] = valor
             
-            # Filtrar por contrato
-            referencia = str(row_dict.get('Referencia', '')).strip()
+            referencia = str(row_dict.get('Referencia', '')).strip() if row_dict.get('Referencia') else ''
             if contrato_buscado in referencia:
-                if primer_fila_data is None:
-                    primer_fila_data = row_dict
-                chunk.append(row_dict)
-            
-            # Procesar en chunks
-            if len(chunk) >= CHUNK_SIZE:
-                pagos_list.extend(chunk)
-                chunk = []
-        
-        # Agregar filas restantes
-        if chunk:
-            pagos_list.extend(chunk)
+                if primer_fila is None:
+                    primer_fila = row_dict
+                pagos_data.append(row_dict)
         
         wb_insumo.close()
         
-        if not pagos_list or primer_fila_data is None:
+        if not pagos_data or primer_fila is None:
             return {"ok": False, "mensaje": f"No se encontró información para: {contrato_buscado}"}
         
-    except Exception as e:
-        return {"ok": False, "mensaje": f"Error al leer el histórico: {str(e)}"}
-
-    try:
-        # Crear DataFrame solo con los datos filtrados
-        pagos = pd.DataFrame(pagos_list)
-        
+        # Cargar plantilla y llenar datos
         wb = openpyxl.load_workbook(ruta_plantilla)
         ws = wb.active
-
+        
         fila_inicio = 17
-        fila_fin = fila_inicio + len(pagos) - 1
+        fila_fin = fila_inicio + len(pagos_data) - 1
         for f in range(fila_inicio, fila_fin + 1):
             _desmerge_fila_datos(ws, f)
-
+        
         mmap = _build_merge_map(ws)
-
-        val_contrato = primer_fila_data.get(COL_VALOR_CTO, 0) or 0
-
+        
+        val_contrato = primer_fila.get(COL_VALOR_CTO, 0) or 0
+        
         _escribir_coord(ws, 'D5', contrato_buscado, mmap=mmap)
-        _escribir_coord(ws, 'D6', str(primer_fila_data.get('Nombre', '')), mmap=mmap)
+        _escribir_coord(ws, 'D6', str(primer_fila.get('Nombre', '')), mmap=mmap)
         _escribir_coord(ws, 'D7', val_contrato, fmt_moneda=True, mmap=mmap)
-        _escribir_coord(ws, 'D8', primer_fila_data.get(COL_FECHA_INICIO, ''), mmap=mmap)
-        _escribir_coord(ws, 'H5', _limpiar(primer_fila_data.get('Proveedor', '')), mmap=mmap)
-        _escribir_coord(ws, 'H6', _limpiar(primer_fila_data.get('Nº identificación', '')), mmap=mmap)
-        _escribir_coord(ws, 'H7', _limpiar(primer_fila_data.get('Numero RP', '')), mmap=mmap)
-        _escribir_coord(ws, 'H8', primer_fila_data.get(COL_FECHA_FIN, ''), mmap=mmap)
-
+        _escribir_coord(ws, 'D8', primer_fila.get(COL_FECHA_INICIO, ''), mmap=mmap)
+        _escribir_coord(ws, 'H5', _limpiar(primer_fila.get('Proveedor', '')), mmap=mmap)
+        _escribir_coord(ws, 'H6', _limpiar(primer_fila.get('Nº identificación', '')), mmap=mmap)
+        _escribir_coord(ws, 'H7', _limpiar(primer_fila.get('Numero RP', '')), mmap=mmap)
+        _escribir_coord(ws, 'H8', primer_fila.get(COL_FECHA_FIN, ''), mmap=mmap)
+        
         fila_actual = fila_inicio
         saldo_acumulado = val_contrato
-
-        for i, (_, fila) in enumerate(pagos.iterrows(), start=1):
+        
+        for i, fila in enumerate(pagos_data, start=1):
             monto = fila.get('Valor Bruto', 0) or 0
             saldo_acumulado -= monto
-
+            
             _escribir_rc(ws, fila_actual, 2, i, mmap=mmap)
             _escribir_rc(ws, fila_actual, 3, fila.get('Texto cabecera documento', ''), mmap=mmap)
             _escribir_rc(ws, fila_actual, 4, monto, fmt_moneda=True, mmap=mmap)
@@ -158,20 +136,20 @@ def generar_estado_cuenta(ruta_plantilla, ruta_insumo, contrato_buscado, ruta_sa
             _escribir_rc(ws, fila_actual, 8, _limpiar(fila.get('Numero RP', '')), mmap=mmap)
             _escribir_rc(ws, fila_actual, 9, _limpiar(fila.get(COL_CDP_EXTERNO, '')), mmap=mmap)
             _escribir_rc(ws, fila_actual, 10, _limpiar(fila.get(COL_CRP_EXTERNO, '')), mmap=mmap)
-
+            
             fila_actual += 1
-
+        
         wb.save(ruta_salida_excel)
-
+        
         return {
             "ok": True,
             "contrato": contrato_buscado,
-            "contratista": str(primer_fila_data.get('Nombre', '')),
-            "pagos_encontrados": len(pagos),
+            "contratista": str(primer_fila.get('Nombre', '')),
+            "pagos_encontrados": len(pagos_data),
             "valor_contrato": float(val_contrato) if val_contrato else 0,
             "saldo_final": float(saldo_acumulado),
             "archivo_salida": ruta_salida_excel,
         }
     
     except Exception as e:
-        return {"ok": False, "mensaje": f"Error al generar el estado de cuenta: {str(e)}"}
+        return {"ok": False, "mensaje": f"Error: {str(e)}"}
