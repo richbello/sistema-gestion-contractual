@@ -5,10 +5,12 @@ Adaptado del script original de Colab: busca todos los pagos de un
 contrato en el histórico y llena la plantilla oficial de "Estado de
 Cuenta" (.xlsx con celdas fusionadas) respetando el formato.
 
-Versión simple y robusta: lee el Excel de una vez con pandas,
-filtra en memoria, y libera todo rápido.
+Versión optimizada: usa SQLite temporal para queries eficientes
+sin cargar todo el Excel en memoria.
 """
 import os
+import tempfile
+import sqlite3
 import openpyxl
 from openpyxl.utils import range_boundaries, column_index_from_string
 import pandas as pd
@@ -65,48 +67,79 @@ def generar_estado_cuenta(ruta_plantilla, ruta_insumo, contrato_buscado, ruta_sa
     """
     Busca los pagos del contrato en el histórico, llena la plantilla y
     guarda el resultado en ruta_salida_excel. Retorna un resumen.
+    
+    Estrategia: carga el Excel a SQLite temporal, consulta solo lo necesario,
+    descarta la BD. Mantiene memoria baja.
     """
+    db_temp = None
     try:
-        # Leer el Excel con pandas
+        # Crear BD SQLite temporal
+        db_temp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        db_path = db_temp.name
+        db_temp.close()
+        
+        # Leer Excel y escribir a SQLite (libera pandas después)
         df = pd.read_excel(ruta_insumo)
         df.columns = df.columns.str.strip()
-
-        # Filtrar por contrato
-        pagos = df[df['Referencia'].astype(str).str.contains(contrato_buscado, na=False)].copy()
-        if pagos.empty:
+        
+        conn = sqlite3.connect(db_path)
+        df.to_sql('historico', conn, if_exists='replace', index=False)
+        conn.commit()
+        
+        # Liberar DataFrame
+        del df
+        
+        # Consultar desde SQLite (solo las filas del contrato)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM historico WHERE CAST(Referencia AS TEXT) LIKE ?",
+            (f"%{contrato_buscado}%",)
+        )
+        
+        # Obtener encabezados
+        headers = [description[0] for description in cursor.description]
+        
+        # Obtener todas las filas coincidentes
+        rows = cursor.fetchall()
+        conn.close()
+        
+        if not rows:
+            os.unlink(db_path)
             return {"ok": False, "mensaje": f"No se encontró información para: {contrato_buscado}"}
-
-        primer = pagos.iloc[0]
-
-        # Cargar plantilla
+        
+        # Convertir a diccionarios
+        pagos_data = [dict(zip(headers, row)) for row in rows]
+        primer_fila = pagos_data[0]
+        
+        # Cargar plantilla y llenar
         wb = openpyxl.load_workbook(ruta_plantilla)
         ws = wb.active
-
+        
         fila_inicio = 17
-        fila_fin = fila_inicio + len(pagos) - 1
+        fila_fin = fila_inicio + len(pagos_data) - 1
         for f in range(fila_inicio, fila_fin + 1):
             _desmerge_fila_datos(ws, f)
-
+        
         mmap = _build_merge_map(ws)
-
-        val_contrato = primer.get(COL_VALOR_CTO, 0) or 0
-
+        
+        val_contrato = primer_fila.get(COL_VALOR_CTO, 0) or 0
+        
         _escribir_coord(ws, 'D5', contrato_buscado, mmap=mmap)
-        _escribir_coord(ws, 'D6', str(primer.get('Nombre', '')), mmap=mmap)
+        _escribir_coord(ws, 'D6', str(primer_fila.get('Nombre', '')), mmap=mmap)
         _escribir_coord(ws, 'D7', val_contrato, fmt_moneda=True, mmap=mmap)
-        _escribir_coord(ws, 'D8', primer.get(COL_FECHA_INICIO, ''), mmap=mmap)
-        _escribir_coord(ws, 'H5', _limpiar(primer.get('Proveedor', '')), mmap=mmap)
-        _escribir_coord(ws, 'H6', _limpiar(primer.get('Nº identificación', '')), mmap=mmap)
-        _escribir_coord(ws, 'H7', _limpiar(primer.get('Numero RP', '')), mmap=mmap)
-        _escribir_coord(ws, 'H8', primer.get(COL_FECHA_FIN, ''), mmap=mmap)
-
+        _escribir_coord(ws, 'D8', primer_fila.get(COL_FECHA_INICIO, ''), mmap=mmap)
+        _escribir_coord(ws, 'H5', _limpiar(primer_fila.get('Proveedor', '')), mmap=mmap)
+        _escribir_coord(ws, 'H6', _limpiar(primer_fila.get('Nº identificación', '')), mmap=mmap)
+        _escribir_coord(ws, 'H7', _limpiar(primer_fila.get('Numero RP', '')), mmap=mmap)
+        _escribir_coord(ws, 'H8', primer_fila.get(COL_FECHA_FIN, ''), mmap=mmap)
+        
         fila_actual = fila_inicio
         saldo_acumulado = val_contrato
-
-        for i, (_, fila) in enumerate(pagos.iterrows(), start=1):
+        
+        for i, fila in enumerate(pagos_data, start=1):
             monto = fila.get('Valor Bruto', 0) or 0
             saldo_acumulado -= monto
-
+            
             _escribir_rc(ws, fila_actual, 2, i, mmap=mmap)
             _escribir_rc(ws, fila_actual, 3, fila.get('Texto cabecera documento', ''), mmap=mmap)
             _escribir_rc(ws, fila_actual, 4, monto, fmt_moneda=True, mmap=mmap)
@@ -116,23 +149,28 @@ def generar_estado_cuenta(ruta_plantilla, ruta_insumo, contrato_buscado, ruta_sa
             _escribir_rc(ws, fila_actual, 8, _limpiar(fila.get('Numero RP', '')), mmap=mmap)
             _escribir_rc(ws, fila_actual, 9, _limpiar(fila.get(COL_CDP_EXTERNO, '')), mmap=mmap)
             _escribir_rc(ws, fila_actual, 10, _limpiar(fila.get(COL_CRP_EXTERNO, '')), mmap=mmap)
-
+            
             fila_actual += 1
-
+        
         wb.save(ruta_salida_excel)
-
-        # Liberar memoria explícitamente
-        del df, pagos
-
+        
         return {
             "ok": True,
             "contrato": contrato_buscado,
-            "contratista": str(primer.get('Nombre', '')),
-            "pagos_encontrados": len(pagos),
+            "contratista": str(primer_fila.get('Nombre', '')),
+            "pagos_encontrados": len(pagos_data),
             "valor_contrato": float(val_contrato) if val_contrato else 0,
             "saldo_final": float(saldo_acumulado),
             "archivo_salida": ruta_salida_excel,
         }
-
+    
     except Exception as e:
         return {"ok": False, "mensaje": f"Error: {str(e)}"}
+    
+    finally:
+        # Limpiar BD temporal
+        if db_temp and os.path.exists(db_path):
+            try:
+                os.unlink(db_path)
+            except:
+                pass
