@@ -52,6 +52,11 @@
         <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 9v11"/><circle cx="6.3" cy="6.5" r="0.6" fill="currentColor" stroke="none"/></svg>
         Estado de cuenta
       </button>
+      <button class="nav-item" data-vista="historico">
+        <span class="nav-numero">05</span>
+        <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9h18M3 15h18M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
+        Histórico de Pagos
+      </button>
     </nav>
 
     <div class="sidebar-pie">
@@ -378,6 +383,49 @@
       </form>
     </section>
 
+    <section class="vista" id="vista-historico" hidden>
+      <div class="contenedor-modulo">
+        <div class="eyebrow-seccion">MÓDULO 05</div>
+        <h1 id="titulo-modulo-hist">Histórico de Pagos</h1>
+        <p class="descripcion-modulo">Visualiza, filtra y analiza todos los pagos realizados. Descarga reportes personalizados con gráficos.</p>
+
+        <form id="form-historico" class="formulario">
+          <div class="grupo-entrada">
+            <label>Cargar Histórico de Pagos</label>
+            <div id="drop-historico-pagos" class="dropzone">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <div>Arrastra el archivo o haz clic para seleccionarlo</div>
+              <small>.xlsx · un solo archivo</small>
+            </div>
+            <input type="file" id="input-historico-pagos" accept=".xlsx" style="display:none">
+            <div id="lista-historico-pagos"></div>
+          </div>
+
+          <div class="grupo-entrada">
+            <label>Filtrar por Contrato (opcional)</label>
+            <input type="text" id="input-filtro-contrato" placeholder="233-2026" class="campo-texto">
+          </div>
+
+          <button type="submit" id="btn-cargar-historico" class="boton-primario" disabled>
+            <span>→</span> Cargar Histórico
+          </button>
+        </form>
+
+        <div id="alerta-historico" class="alerta" style="display:none;"></div>
+        <div id="estado-historico" class="estado-carga" style="display:none;"><div class="spinner"></div> Procesando...</div>
+
+        <div id="resultados-historico" class="resultados" style="display:none;">
+          <div id="metricas-historico" class="metricas-grid"></div>
+          <div class="controles-tabla">
+            <input type="text" id="filtro-tabla" placeholder="Buscar en tabla..." class="campo-busqueda">
+            <button id="btn-descargar-filtrado" class="boton-secundario">⬇ Descargar Filtrado</button>
+          </div>
+          <div id="contenedor-tabla" style="overflow-x:auto; margin-top:20px;"></div>
+          <canvas id="grafico-pagos" style="margin-top:30px; max-width:100%; max-height:300px;"></canvas>
+        </div>
+      </div>
+    </section>
+
   </main>
 </div>
 
@@ -386,5 +434,6 @@
 <script src="config.js"></script>
 <script src="static/js/main.js"></script>
 <script src="static/js/modulo-04.js"></script>
+      <script src="static/js/modulo-05.js"></script>
 </body>
 </html>
