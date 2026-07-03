@@ -1,47 +1,70 @@
+from flask import Blueprint, request, jsonify, send_file
+from flask_cors import cross_origin
+import pandas as pd
+from openpyxl import load_workbook
 import os
-import traceback
-from flask import Blueprint, request, jsonify, current_app, send_file
 
-from ..services.estado_cuenta_service import generar_estado_cuenta
-from .utils import guardar_archivo, nombre_salida
+bp = Blueprint('estado_cuenta', __name__)
 
-estado_cuenta_bp = Blueprint("estado_cuenta", __name__)
-
-
-@estado_cuenta_bp.route("/procesar", methods=["POST"])
+@bp.route('/procesar', methods=['POST'])
+@cross_origin()
 def procesar():
     try:
-        upload_dir = current_app.config["UPLOAD_FOLDER"]
-        output_dir = current_app.config["OUTPUT_FOLDER"]
+        plantilla_file = request.files.get('plantilla')
+        historico_file = request.files.get('historico')
+        contrato = request.form.get('contrato', '').strip()
 
-        if "plantilla" not in request.files or "historico" not in request.files:
-            return jsonify({"ok": False, "mensaje": "Se requieren los archivos 'plantilla' e 'historico'."}), 400
+        if not all([plantilla_file, historico_file, contrato]):
+            return jsonify({"ok": False, "mensaje": "Faltan archivos o contrato"}), 400
 
-        contrato = request.form.get("contrato", "").strip()
-        if not contrato:
-            return jsonify({"ok": False, "mensaje": "Debe indicar el número de contrato (ej. 713-2023)."}), 400
+        # Leer histórico
+        df_historico = pd.read_excel(historico_file, sheet_name=0)
+        pagos = df_historico[df_historico['Referencia'].astype(str).str.contains(contrato, na=False)]
+        
+        if pagos.empty:
+            return jsonify({"ok": False, "mensaje": f"No encontrado: {contrato}"}), 400
 
-        ruta_plantilla = guardar_archivo(request.files["plantilla"], upload_dir)
-        ruta_historico = guardar_archivo(request.files["historico"], upload_dir)
-        ruta_salida = nombre_salida(output_dir, f"Estado_Cuenta_{contrato}")
+        primer = pagos.iloc[0]
 
-        resultado = generar_estado_cuenta(ruta_plantilla, ruta_historico, contrato, ruta_salida)
+        # Cargar plantilla con openpyxl (preserva TODO)
+        plantilla_path = '/tmp/plantilla_temp.xlsx'
+        plantilla_file.save(plantilla_path)
+        wb = load_workbook(plantilla_path)
+        ws = wb.active
 
-        if not resultado.get("ok"):
-            return jsonify(resultado), 404
+        # Escribir datos SIN BORRAR FORMATOS
+        ws['D5'].value = contrato
+        ws['D6'].value = str(primer.get('Nombre', ''))
+        ws['D7'].value = float(primer.get('VALOR FINAL DEL CONTRATO', 0)) or 0
+        ws['D8'].value = str(primer.get('FECHA INICIAL DE CONTRATO', ''))
+        ws['H5'].value = str(primer.get('Proveedor', ''))
+        ws['H6'].value = str(primer.get('Nº identificación', ''))
+        ws['H7'].value = str(primer.get('Numero RP', ''))
+        ws['H8'].value = str(primer.get('FECHA DE TERMINACION FINAL', ''))
 
-        resultado["descarga"] = f"/api/estado-cuenta/descargar/{os.path.basename(ruta_salida)}"
-        return jsonify(resultado)
+        fila = 17
+        saldo = float(primer.get('VALOR FINAL DEL CONTRATO', 0)) or 0
+
+        for i, (_, pago) in enumerate(pagos.iterrows(), start=1):
+            monto = float(pago.get('Valor Bruto', 0)) or 0
+            saldo -= monto
+
+            ws[f'B{fila}'].value = i
+            ws[f'C{fila}'].value = str(pago.get('Texto cabecera documento', ''))
+            ws[f'D{fila}'].value = monto
+            ws[f'E{fila}'].value = saldo
+            ws[f'F{fila}'].value = str(pago.get('Doc.compensación', ''))
+            ws[f'G{fila}'].value = str(pago.get('Fecha de pago', ''))
+            ws[f'H{fila}'].value = str(pago.get('Numero RP', ''))
+            ws[f'I{fila}'].value = str(pago.get('CDP Externo', ''))
+            ws[f'J{fila}'].value = str(pago.get('CRP Externo', ''))
+            fila += 1
+
+        salida_path = f'/tmp/Estado_de_Cuenta_{contrato}.xlsx'
+        wb.save(salida_path)
+
+        return send_file(salida_path, as_attachment=True, download_name=f'Estado_de_Cuenta_{contrato}.xlsx')
 
     except Exception as e:
-        current_app.logger.error(traceback.format_exc())
-        return jsonify({"ok": False, "mensaje": f"Error procesando la solicitud: {e}"}), 500
+        return jsonify({"ok": False, "mensaje": str(e)}), 500
 
-
-@estado_cuenta_bp.route("/descargar/<nombre_archivo>", methods=["GET"])
-def descargar(nombre_archivo):
-    output_dir = current_app.config["OUTPUT_FOLDER"]
-    ruta = os.path.join(output_dir, nombre_archivo)
-    if not os.path.isfile(ruta):
-        return jsonify({"ok": False, "mensaje": "Archivo no encontrado."}), 404
-    return send_file(ruta, as_attachment=True)
