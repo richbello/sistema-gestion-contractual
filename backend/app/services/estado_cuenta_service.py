@@ -1,9 +1,12 @@
-"""
+﻿"""
 Módulo 4 — Estado de cuenta por contrato.
 
 Adaptado del script original de Colab: busca todos los pagos de un
 contrato en el histórico y llena la plantilla oficial de "Estado de
 Cuenta" (.xlsx con celdas fusionadas) respetando el formato.
+
+Versión mejorada: lee el histórico en chunks para evitar errores de memoria
+en Render con archivos grandes.
 """
 import os
 import openpyxl
@@ -15,6 +18,9 @@ COL_CRP_EXTERNO = 'CRP Externo'
 COL_FECHA_INICIO = 'FECHA INICIAL DE CONTRATO'
 COL_FECHA_FIN = 'FECHA DE TERMINACION FINAL'
 COL_VALOR_CTO = 'VALOR FINAL DEL CONTRATO'
+
+# Tamaño del chunk para lectura eficiente
+CHUNK_SIZE = 5000
 
 
 def _limpiar(dato):
@@ -62,17 +68,40 @@ def generar_estado_cuenta(ruta_plantilla, ruta_insumo, contrato_buscado, ruta_sa
     """
     Busca los pagos del contrato en el histórico, llena la plantilla y
     guarda el resultado en ruta_salida_excel. Retorna un resumen.
+    
+    Lee el histórico en chunks para evitar errores de memoria con archivos grandes.
     """
-    df = pd.read_excel(ruta_insumo)
-    df.columns = df.columns.str.strip()
-
-    pagos = df[df['Referencia'].astype(str).str.contains(contrato_buscado, na=False)].copy()
+    # Leer el Excel en chunks para no cargar todo en memoria
+    pagos_list = []
+    primer_fila = None
+    
+    try:
+        for chunk in pd.read_excel(ruta_insumo, chunksize=CHUNK_SIZE):
+            chunk.columns = chunk.columns.str.strip()
+            
+            # Filtrar por contrato en este chunk
+            chunk_filtrado = chunk[chunk['Referencia'].astype(str).str.contains(contrato_buscado, na=False)].copy()
+            
+            if not chunk_filtrado.empty:
+                # Guardar la primera fila encontrada para datos del contrato
+                if primer_fila is None:
+                    primer_fila = chunk_filtrado.iloc[0]
+                
+                pagos_list.append(chunk_filtrado)
+    except Exception as e:
+        return {"ok": False, "mensaje": f"Error al leer el histórico: {str(e)}"}
+    
+    # Combinar todos los chunks filtrados
+    if not pagos_list:
+        return {"ok": False, "mensaje": f"No se encontró información para: {contrato_buscado}"}
+    
+    pagos = pd.concat(pagos_list, ignore_index=True)
+    
     if pagos.empty:
         return {"ok": False, "mensaje": f"No se encontró información para: {contrato_buscado}"}
 
     wb = openpyxl.load_workbook(ruta_plantilla)
     ws = wb.active
-    primer = pagos.iloc[0]
 
     fila_inicio = 17
     fila_fin = fila_inicio + len(pagos) - 1
@@ -81,16 +110,16 @@ def generar_estado_cuenta(ruta_plantilla, ruta_insumo, contrato_buscado, ruta_sa
 
     mmap = _build_merge_map(ws)
 
-    val_contrato = primer.get(COL_VALOR_CTO, 0) or 0
+    val_contrato = primer_fila.get(COL_VALOR_CTO, 0) or 0
 
     _escribir_coord(ws, 'D5', contrato_buscado, mmap=mmap)
-    _escribir_coord(ws, 'D6', str(primer.get('Nombre', '')), mmap=mmap)
+    _escribir_coord(ws, 'D6', str(primer_fila.get('Nombre', '')), mmap=mmap)
     _escribir_coord(ws, 'D7', val_contrato, fmt_moneda=True, mmap=mmap)
-    _escribir_coord(ws, 'D8', primer.get(COL_FECHA_INICIO, ''), mmap=mmap)
-    _escribir_coord(ws, 'H5', _limpiar(primer.get('Proveedor', '')), mmap=mmap)
-    _escribir_coord(ws, 'H6', _limpiar(primer.get('Nº identificación', '')), mmap=mmap)
-    _escribir_coord(ws, 'H7', _limpiar(primer.get('Numero RP', '')), mmap=mmap)
-    _escribir_coord(ws, 'H8', primer.get(COL_FECHA_FIN, ''), mmap=mmap)
+    _escribir_coord(ws, 'D8', primer_fila.get(COL_FECHA_INICIO, ''), mmap=mmap)
+    _escribir_coord(ws, 'H5', _limpiar(primer_fila.get('Proveedor', '')), mmap=mmap)
+    _escribir_coord(ws, 'H6', _limpiar(primer_fila.get('Nº identificación', '')), mmap=mmap)
+    _escribir_coord(ws, 'H7', _limpiar(primer_fila.get('Numero RP', '')), mmap=mmap)
+    _escribir_coord(ws, 'H8', primer_fila.get(COL_FECHA_FIN, ''), mmap=mmap)
 
     fila_actual = fila_inicio
     saldo_acumulado = val_contrato
@@ -116,7 +145,7 @@ def generar_estado_cuenta(ruta_plantilla, ruta_insumo, contrato_buscado, ruta_sa
     return {
         "ok": True,
         "contrato": contrato_buscado,
-        "contratista": str(primer.get('Nombre', '')),
+        "contratista": str(primer_fila.get('Nombre', '')),
         "pagos_encontrados": len(pagos),
         "valor_contrato": float(val_contrato) if val_contrato else 0,
         "saldo_final": float(saldo_acumulado),
