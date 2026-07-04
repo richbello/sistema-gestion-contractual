@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('form-historico');
     if (!form) return;
 
+    const dropzone = document.getElementById('drop-historico-pagos');
     const inputHistorico = document.getElementById('input-historico-pagos');
     const inputFiltroContrato = document.getElementById('input-filtro-contrato');
     const btnCargar = document.getElementById('btn-cargar-historico');
@@ -15,6 +16,24 @@ document.addEventListener('DOMContentLoaded', function() {
 
     let datosCompletos = [];
     let datosFiltrados = [];
+
+    // Dropzone
+    dropzone.addEventListener('click', () => inputHistorico.click());
+    
+    ['dragover', 'dragenter'].forEach(ev =>
+        dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.style.background = '#f0f0f0'; })
+    );
+    
+    ['dragleave', 'drop'].forEach(ev =>
+        dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.style.background = ''; })
+    );
+    
+    dropzone.addEventListener('drop', e => {
+        if (e.dataTransfer.files.length) {
+            inputHistorico.files = e.dataTransfer.files;
+            enableBtn();
+        }
+    });
 
     function enableBtn() {
         btnCargar.disabled = !inputHistorico.files.length;
@@ -48,7 +67,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const columnas = ['Nombre', 'Nº identificación', 'Valor Bruto', 'Fecha de pago', 'Referencia', 'Ejercicio'];
-        let html = '<table class="tabla-historico" style="width:100%; border-collapse:collapse; font-size:12px;"><thead><tr style="background:#f0f0f0;">';
+        let html = '<table style="width:100%; border-collapse:collapse; font-size:12px;"><thead><tr style="background:#f0f0f0;">';
 
         columnas.forEach(col => {
             html += `<th style="padding:8px; text-align:left; border:1px solid #ddd; font-weight:bold;">${col}</th>`;
@@ -70,13 +89,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function mostrarGrafico(datos) {
-        const ctx = document.getElementById('grafico-pagos').getContext('2d');
+        const ctx = document.getElementById('grafico-pagos');
+        if (!ctx) return;
+        
         const porMes = {};
-
         datos.forEach(r => {
             const fecha = r['Fecha de pago'];
             if (fecha) {
-                const mes = String(fecha).substring(0, 7); // YYYY-MM
+                const mes = String(fecha).substring(0, 7);
                 porMes[mes] = (porMes[mes] || 0) + (Number(r['Valor Bruto']) || 0);
             }
         });
@@ -84,35 +104,35 @@ document.addEventListener('DOMContentLoaded', function() {
         const meses = Object.keys(porMes).sort();
         const valores = meses.map(m => porMes[m]);
 
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: meses,
-                datasets: [{
-                    label: 'Pagos por Mes',
-                    data: valores,
-                    backgroundColor: '#667eea',
-                    borderColor: '#667eea',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { display: true }
+        if (window.Chart) {
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: meses,
+                    datasets: [{
+                        label: 'Pagos por Mes',
+                        data: valores,
+                        backgroundColor: '#667eea',
+                        borderColor: '#667eea',
+                        borderWidth: 1
+                    }]
                 },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return '$' + (value / 1000000).toFixed(1) + 'M';
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: true } },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return '$' + (value / 1000000).toFixed(1) + 'M';
+                                }
                             }
                         }
                     }
                 }
-            }
-        });
+            });
+        }
     }
 
     inputHistorico.addEventListener('change', enableBtn);
@@ -144,6 +164,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const archivo = inputHistorico.files[0];
             const filtroContrato = inputFiltroContrato.value.trim();
+
+            if (!archivo) throw new Error('Selecciona un archivo');
 
             const buf = await archivo.arrayBuffer();
             const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
