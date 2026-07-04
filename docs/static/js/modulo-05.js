@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const estadoDiv = document.getElementById('estado-historico');
     const resultadosDiv = document.getElementById('resultados-historico');
     const metricasDiv = document.getElementById('metricas-historico');
+    const tarjetaContratista = document.getElementById('tarjeta-contratista');
     
     const filtroContratista = document.getElementById('filtro-contratista');
     const filtroReferencia = document.getElementById('filtro-referencia');
@@ -29,7 +30,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let chartProveedores = null;
 
     dropzone.addEventListener('click', () => inputHistorico.click());
-    ['dragover', 'dragenter'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.style.background = '#e8f0ff'; }));
+    ['dragover', 'dragenter'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.style.background = '#1a1f2e'; }));
     ['dragleave', 'drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.style.background = ''; }));
     dropzone.addEventListener('drop', e => { if (e.dataTransfer.files.length) { inputHistorico.files = e.dataTransfer.files; enableBtn(); } });
 
@@ -53,6 +54,32 @@ document.addEventListener('DOMContentLoaded', function() {
         alertaDiv.style.display = 'block';
     }
 
+    function mostrarMetricas(datos) {
+        const totalPagado = datos.reduce((sum, r) => sum + (Number(r['Valor Bruto']) || 0), 0);
+        const totalTransacciones = datos.length;
+        const proveedoresUnicos = new Set(datos.map(r => r['Nombre'])).size;
+        const ejercicios = [...new Set(datos.map(r => r['Ejercicio']))].sort().join(', ');
+
+        metricasDiv.innerHTML = `
+            <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding:25px; border-radius:8px;">
+                <div style="font-size:28px; font-weight:bold;">${formatCurrency(totalPagado)}</div>
+                <div style="font-size:12px; margin-top:8px; opacity:0.9;">Valor Bruto Total</div>
+            </div>
+            <div style="background:linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color:white; padding:25px; border-radius:8px;">
+                <div style="font-size:28px; font-weight:bold;">${totalTransacciones.toLocaleString()}</div>
+                <div style="font-size:12px; margin-top:8px; opacity:0.9;">Registros SAP</div>
+            </div>
+            <div style="background:linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color:white; padding:25px; border-radius:8px;">
+                <div style="font-size:28px; font-weight:bold;">${proveedoresUnicos}</div>
+                <div style="font-size:12px; margin-top:8px; opacity:0.9;">Proveedores únicos</div>
+            </div>
+            <div style="background:linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color:white; padding:25px; border-radius:8px;">
+                <div style="font-size:28px; font-weight:bold;">${ejercicios}</div>
+                <div style="font-size:12px; margin-top:8px; opacity:0.9;">Mayor ejercicio</div>
+            </div>
+        `;
+    }
+
     function construirResumenContratistas() {
         resumenContratistas = {};
         datosCompletos.forEach(r => {
@@ -62,11 +89,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     total: 0,
                     transacciones: 0,
                     ultimaFecha: null,
-                    nit: r['Nº identificación'] || ''
+                    nit: r['Nº identificación'] || '',
+                    asignaciones: new Set(),
+                    vigencias: new Set()
                 };
             }
             resumenContratistas[nombre].total += Number(r['Valor Bruto']) || 0;
             resumenContratistas[nombre].transacciones += 1;
+            resumenContratistas[nombre].asignaciones.add(r['Referencia'] || 'Sin ref');
+            resumenContratistas[nombre].vigencias.add(r['Ejercicio'] || 'Sin año');
             const fecha = r['Fecha de pago'];
             if (fecha && (!resumenContratistas[nombre].ultimaFecha || fecha > resumenContratistas[nombre].ultimaFecha)) {
                 resumenContratistas[nombre].ultimaFecha = fecha;
@@ -74,25 +105,43 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function mostrarMetricas(datos) {
-        const totalPagado = datos.reduce((sum, r) => sum + (Number(r['Valor Bruto']) || 0), 0);
-        const totalTransacciones = datos.length;
-        const proveedoresUnicos = new Set(datos.map(r => r['Nombre'])).size;
+    function mostrarTarjetaContratista(nombreContratista) {
+        const resumen = resumenContratistas[nombreContratista];
+        if (!resumen) {
+            tarjetaContratista.style.display = 'none';
+            return;
+        }
 
-        metricasDiv.innerHTML = `
-            <div class="metrica-card" style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding:20px; border-radius:8px; text-align:center;">
-                <div style="font-size:20px; font-weight:bold;">${formatCurrency(totalPagado)}</div>
-                <div style="font-size:12px; margin-top:5px;">Valor Total Pagado</div>
+        const asignacionesArr = Array.from(resumen.asignaciones).slice(0, 3);
+        const vigenciasArr = Array.from(resumen.vigencias).sort();
+
+        document.getElementById('contratista-nombre').textContent = nombreContratista;
+        document.getElementById('contratista-nit').textContent = `NIT: ${resumen.nit}`;
+
+        const resumenHtml = `
+            <div style="background:#0f1419; padding:12px; border-radius:6px; text-align:center;">
+                <div style="font-size:20px; font-weight:bold; color:#667eea;">${formatCurrency(resumen.total)}</div>
+                <div style="font-size:11px; color:#999; margin-top:5px;">Total pagado</div>
             </div>
-            <div class="metrica-card" style="background:linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color:white; padding:20px; border-radius:8px; text-align:center;">
-                <div style="font-size:20px; font-weight:bold;">${totalTransacciones.toLocaleString()}</div>
-                <div style="font-size:12px; margin-top:5px;">Transacciones</div>
+            <div style="background:#0f1419; padding:12px; border-radius:6px; text-align:center;">
+                <div style="font-size:20px; font-weight:bold; color:#f5576c;">${resumen.transacciones}</div>
+                <div style="font-size:11px; color:#999; margin-top:5px;">Registros</div>
             </div>
-            <div class="metrica-card" style="background:linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color:white; padding:20px; border-radius:8px; text-align:center;">
-                <div style="font-size:20px; font-weight:bold;">${proveedoresUnicos.toLocaleString()}</div>
-                <div style="font-size:12px; margin-top:5px;">Proveedores</div>
+            <div style="background:#0f1419; padding:12px; border-radius:6px; text-align:center;">
+                <div style="font-size:20px; font-weight:bold; color:#43e97b;">${formatDate(resumen.ultimaFecha)}</div>
+                <div style="font-size:11px; color:#999; margin-top:5px;">Último pago</div>
+            </div>
+            <div style="background:#0f1419; padding:12px; border-radius:6px; text-align:center;">
+                <div style="font-size:20px; font-weight:bold; color:#4facfe;">${vigenciasArr.join(' - ')}</div>
+                <div style="font-size:11px; color:#999; margin-top:5px;">Ejercicios activos</div>
             </div>
         `;
+        document.getElementById('contratista-resumen').innerHTML = resumenHtml;
+
+        const asignacionesHtml = `<strong>Asignaciones:</strong> ${asignacionesArr.map(a => `<span style="display:inline-block; background:#333; padding:6px 12px; border-radius:4px; margin-right:8px; margin-top:8px; font-size:11px;">${a}</span>`).join('')}`;
+        document.getElementById('contratista-asignaciones').innerHTML = asignacionesHtml;
+
+        tarjetaContratista.style.display = 'block';
     }
 
     function aplicarFiltros() {
@@ -124,6 +173,13 @@ document.addEventListener('DOMContentLoaded', function() {
             return cumpleContratista && cumpleReferencia && cumpleVigencia && cumpleFecha;
         });
 
+        if (busqContratista && Object.keys(resumenContratistas).some(c => c.toLowerCase().includes(busqContratista))) {
+            const contratista = Object.keys(resumenContratistas).find(c => c.toLowerCase().includes(busqContratista));
+            mostrarTarjetaContratista(contratista);
+        } else {
+            tarjetaContratista.style.display = 'none';
+        }
+
         btnTabla.textContent = `📋 Tabla (${datosFiltrados.length})`;
         mostrarGraficos();
         mostrarTabla();
@@ -131,25 +187,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function mostrarTabla() {
         if (!datosFiltrados.length) {
-            contenedorTabla.innerHTML = '<p>No hay datos para mostrar.</p>';
+            contenedorTabla.innerHTML = '<p style="color:#999;">No hay datos para mostrar.</p>';
             return;
         }
 
         const columnas = ['Nombre', 'Nº identificación', 'Valor Bruto', 'Fecha de pago', 'Referencia', 'Ejercicio'];
-        let html = '<table style="width:100%; border-collapse:collapse; font-size:11px;"><thead><tr style="background:#667eea; color:white;">';
+        let html = '<table style="width:100%; border-collapse:collapse; font-size:11px; color:#ccc;"><thead><tr style="background:#333; border-bottom:2px solid #667eea;">';
 
         columnas.forEach(col => {
-            html += `<th style="padding:12px; text-align:left; border:1px solid #ddd; font-weight:bold;">${col}</th>`;
+            html += `<th style="padding:12px; text-align:left; font-weight:bold;">${col}</th>`;
         });
         html += '</tr></thead><tbody>';
 
         datosFiltrados.forEach((fila, idx) => {
-            html += `<tr style="background:${idx % 2 === 0 ? '#f9f9f9' : 'white'};">`;
+            html += `<tr style="border-bottom:1px solid #333;">`;
             columnas.forEach(col => {
                 let valor = fila[col] || '';
                 if (col === 'Valor Bruto') valor = formatCurrency(valor);
                 if (col === 'Fecha de pago') valor = formatDate(valor);
-                html += `<td style="padding:10px; border:1px solid #ddd;">${valor}</td>`;
+                html += `<td style="padding:10px;">${valor}</td>`;
             });
             html += '</tr>';
         });
@@ -209,12 +265,13 @@ document.addEventListener('DOMContentLoaded', function() {
             options: {
                 responsive: true,
                 plugins: {
-                    legend: { display: true, labels: { font: { size: 12, weight: 'bold' } } },
-                    title: { display: true, text: 'Pagos por Vigencia', font: { size: 14, weight: 'bold' } }
+                    legend: { labels: { color: '#ccc', font: { size: 11 } } },
+                    title: { display: true, text: 'Valor Bruto por Ejercicio Fiscal', color: '#ccc', font: { size: 12 } }
                 },
                 scales: {
-                    y: { ticks: { callback: v => '$' + (v / 1000000).toFixed(0) + 'M' } },
-                    y1: { position: 'right', grid: { drawOnChartArea: false } }
+                    y: { ticks: { color: '#999', callback: v => '$' + (v / 1000000).toFixed(0) + 'M' }, grid: { color: '#333' } },
+                    y1: { position: 'right', ticks: { color: '#999' }, grid: { drawOnChartArea: false } },
+                    x: { ticks: { color: '#999' }, grid: { color: '#333' } }
                 }
             }
         });
@@ -240,9 +297,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 indexAxis: 'y',
                 responsive: true,
                 plugins: {
-                    title: { display: true, text: 'Top 10 Proveedores por Monto', font: { size: 14, weight: 'bold' } }
+                    title: { display: true, text: 'Top 10 Proveedores por Monto', color: '#ccc', font: { size: 12 } },
+                    legend: { labels: { color: '#ccc', font: { size: 11 } } }
                 },
-                scales: { x: { ticks: { callback: v => '$' + (v / 1000000).toFixed(0) + 'M' } } }
+                scales: { x: { ticks: { color: '#999', callback: v => '$' + (v / 1000000).toFixed(0) + 'M' }, grid: { color: '#333' } }, y: { ticks: { color: '#999' }, grid: { color: '#333' } } }
             }
         });
     }
@@ -254,11 +312,12 @@ document.addEventListener('DOMContentLoaded', function() {
         filtroFechaDesde.value = '';
         filtroFechaHasta.value = '';
         filtroVigencia.value = '';
+        tarjetaContratista.style.display = 'none';
         aplicarFiltros();
     });
 
-    btnGraficas.addEventListener('click', () => { contenedorGraficas.style.display = 'block'; contenedorTabla.style.display = 'none'; });
-    btnTabla.addEventListener('click', () => { contenedorGraficas.style.display = 'none'; contenedorTabla.style.display = 'block'; });
+    btnGraficas.addEventListener('click', () => { contenedorGraficas.style.display = 'block'; contenedorTabla.style.display = 'none'; btnGraficas.style.opacity = '1'; btnTabla.style.opacity = '0.6'; });
+    btnTabla.addEventListener('click', () => { contenedorGraficas.style.display = 'none'; contenedorTabla.style.display = 'block'; btnTabla.style.opacity = '1'; btnGraficas.style.opacity = '0.6'; });
     
     btnDescargar.addEventListener('click', () => {
         if (!datosFiltrados.length) return;
@@ -294,12 +353,11 @@ document.addEventListener('DOMContentLoaded', function() {
             construirResumenContratistas();
             datosFiltrados = [...datosCompletos];
 
-            // Llenar select de vigencias
             const vigencias = [...new Set(datosCompletos.map(r => r['Ejercicio']))].sort();
             vigencias.forEach(v => {
                 const opt = document.createElement('option');
                 opt.value = v;
-                opt.textContent = `📅 ${v}`;
+                opt.textContent = v;
                 filtroVigencia.appendChild(opt);
             });
 
