@@ -10,7 +10,8 @@ const CONFIG_VISTAS = {
   'historico': { eyebrow: 'Módulo 05', titulo: 'Histórico de Pagos' },
   'presupuestal': { eyebrow: 'Módulo 06', titulo: 'Análisis Presupuestal' },
   'contratacion': { eyebrow: 'Módulo 07', titulo: 'Contratación' },
-  'ciberseguridad': { eyebrow: 'Módulo 08', titulo: 'Ciberseguridad' }
+  'ciberseguridad': { eyebrow: 'Módulo 08', titulo: 'Ciberseguridad' },
+  'licencias': { eyebrow: 'Módulo 09', titulo: 'Licencias' }
 };
 
 function cambiarVista(nombreVista) {
