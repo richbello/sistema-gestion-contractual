@@ -412,13 +412,17 @@
           <div id="metricas-historico" class="metricas-grid"></div>
 
           <div style="margin-top:30px; border-top:2px solid #eee; padding-top:20px;">
-            <div style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;">
-              <input type="text" id="filtro-contratista" placeholder="Contratista — Nombre, NIT o proveedor..." class="campo-busqueda" style="flex:1; min-width:250px; padding:10px;">
-              <input type="text" id="filtro-referencia" placeholder="Contrato / Referencia / Asignación..." class="campo-busqueda" style="flex:1; min-width:250px; padding:10px;">
-              <select id="filtro-ejercicio" class="campo-busqueda" style="padding:10px; min-width:120px;">
-                <option value="">Ejercicio (Todos)</option>
-              </select>
-              <button id="btn-limpiar-filtros" class="boton-secundario" style="padding:10px 15px;">🔄 Limpiar</button>
+            <div style="background:#f9f9f9; padding:15px; border-radius:8px; margin-bottom:20px;">
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); gap:12px;">
+                <input type="text" id="filtro-contratista" placeholder="🔍 Contratista, NIT o proveedor..." class="campo-busqueda" style="padding:10px;">
+                <input type="text" id="filtro-referencia" placeholder="📋 Contrato / Referencia..." class="campo-busqueda" style="padding:10px;">
+                <input type="date" id="filtro-fecha-desde" class="campo-busqueda" style="padding:10px;">
+                <input type="date" id="filtro-fecha-hasta" class="campo-busqueda" style="padding:10px;">
+                <select id="filtro-vigencia" class="campo-busqueda" style="padding:10px;">
+                  <option value="">📅 Vigencia (Todas)</option>
+                </select>
+                <button id="btn-limpiar-filtros" class="boton-secundario" style="padding:10px;">🔄 Limpiar Filtros</button>
+              </div>
             </div>
 
             <div style="display:flex; gap:10px; margin-bottom:20px;">

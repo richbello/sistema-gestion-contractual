@@ -12,7 +12,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     const filtroContratista = document.getElementById('filtro-contratista');
     const filtroReferencia = document.getElementById('filtro-referencia');
-    const filtroEjercicio = document.getElementById('filtro-ejercicio');
+    const filtroFechaDesde = document.getElementById('filtro-fecha-desde');
+    const filtroFechaHasta = document.getElementById('filtro-fecha-hasta');
+    const filtroVigencia = document.getElementById('filtro-vigencia');
     const btnLimpiar = document.getElementById('btn-limpiar-filtros');
     const btnGraficas = document.getElementById('btn-vista-graficas');
     const btnTabla = document.getElementById('btn-vista-tabla');
@@ -22,6 +24,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     let datosCompletos = [];
     let datosFiltrados = [];
+    let resumenContratistas = {};
     let chartCombo = null;
     let chartProveedores = null;
 
@@ -50,6 +53,27 @@ document.addEventListener('DOMContentLoaded', function() {
         alertaDiv.style.display = 'block';
     }
 
+    function construirResumenContratistas() {
+        resumenContratistas = {};
+        datosCompletos.forEach(r => {
+            const nombre = r['Nombre'] || 'Sin nombre';
+            if (!resumenContratistas[nombre]) {
+                resumenContratistas[nombre] = {
+                    total: 0,
+                    transacciones: 0,
+                    ultimaFecha: null,
+                    nit: r['Nº identificación'] || ''
+                };
+            }
+            resumenContratistas[nombre].total += Number(r['Valor Bruto']) || 0;
+            resumenContratistas[nombre].transacciones += 1;
+            const fecha = r['Fecha de pago'];
+            if (fecha && (!resumenContratistas[nombre].ultimaFecha || fecha > resumenContratistas[nombre].ultimaFecha)) {
+                resumenContratistas[nombre].ultimaFecha = fecha;
+            }
+        });
+    }
+
     function mostrarMetricas(datos) {
         const totalPagado = datos.reduce((sum, r) => sum + (Number(r['Valor Bruto']) || 0), 0);
         const totalTransacciones = datos.length;
@@ -58,15 +82,15 @@ document.addEventListener('DOMContentLoaded', function() {
         metricasDiv.innerHTML = `
             <div class="metrica-card" style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding:20px; border-radius:8px; text-align:center;">
                 <div style="font-size:20px; font-weight:bold;">${formatCurrency(totalPagado)}</div>
-                <div style="font-size:12px; margin-top:5px;">Valor Bruto Total</div>
+                <div style="font-size:12px; margin-top:5px;">Valor Total Pagado</div>
             </div>
             <div class="metrica-card" style="background:linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color:white; padding:20px; border-radius:8px; text-align:center;">
                 <div style="font-size:20px; font-weight:bold;">${totalTransacciones.toLocaleString()}</div>
-                <div style="font-size:12px; margin-top:5px;">Registros SAP</div>
+                <div style="font-size:12px; margin-top:5px;">Transacciones</div>
             </div>
             <div class="metrica-card" style="background:linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color:white; padding:20px; border-radius:8px; text-align:center;">
                 <div style="font-size:20px; font-weight:bold;">${proveedoresUnicos.toLocaleString()}</div>
-                <div style="font-size:12px; margin-top:5px;">Proveedores Únicos</div>
+                <div style="font-size:12px; margin-top:5px;">Proveedores</div>
             </div>
         `;
     }
@@ -74,19 +98,30 @@ document.addEventListener('DOMContentLoaded', function() {
     function aplicarFiltros() {
         const busqContratista = filtroContratista.value.toLowerCase();
         const busqReferencia = filtroReferencia.value.toLowerCase();
-        const ejercicio = filtroEjercicio.value;
+        const fechaDesde = filtroFechaDesde.value ? new Date(filtroFechaDesde.value) : null;
+        const fechaHasta = filtroFechaHasta.value ? new Date(filtroFechaHasta.value) : null;
+        const vigencia = filtroVigencia.value;
 
         datosFiltrados = datosCompletos.filter(r => {
             const nombre = String(r['Nombre'] || '').toLowerCase();
             const nit = String(r['Nº identificación'] || '').toLowerCase();
             const referencia = String(r['Referencia'] || '').toLowerCase();
-            const ej = String(r['Ejercicio'] || '');
+            const vig = String(r['Ejercicio'] || '');
 
             const cumpleContratista = !busqContratista || nombre.includes(busqContratista) || nit.includes(busqContratista);
             const cumpleReferencia = !busqReferencia || referencia.includes(busqReferencia);
-            const cumpleEjercicio = !ejercicio || ej === ejercicio;
+            const cumpleVigencia = !vigencia || vig === vigencia;
 
-            return cumpleContratista && cumpleReferencia && cumpleEjercicio;
+            let cumpleFecha = true;
+            if (fechaDesde || fechaHasta) {
+                const fecha = r['Fecha de pago'] ? new Date(r['Fecha de pago']) : null;
+                if (fecha) {
+                    if (fechaDesde && fecha < fechaDesde) cumpleFecha = false;
+                    if (fechaHasta && fecha > fechaHasta) cumpleFecha = false;
+                }
+            }
+
+            return cumpleContratista && cumpleReferencia && cumpleVigencia && cumpleFecha;
         });
 
         btnTabla.textContent = `📋 Tabla (${datosFiltrados.length})`;
@@ -126,50 +161,39 @@ document.addEventListener('DOMContentLoaded', function() {
     function mostrarGraficos() {
         if (!datosFiltrados.length) return;
 
-        const porEjercicio = {}, porProveedor = {};
-        const ejercicios = new Set();
+        const porVigencia = {}, porProveedor = {};
+        const vigencias = new Set();
         
         datosFiltrados.forEach(r => {
-            const ej = r['Ejercicio'] || 'Sin año';
-            ejercicios.add(ej);
-            porEjercicio[ej] = (porEjercicio[ej] || 0) + (Number(r['Valor Bruto']) || 0);
+            const vig = r['Ejercicio'] || 'Sin año';
+            vigencias.add(vig);
+            porVigencia[vig] = (porVigencia[vig] || 0) + (Number(r['Valor Bruto']) || 0);
 
             const proveedor = r['Nombre'] || 'Sin nombre';
             porProveedor[proveedor] = (porProveedor[proveedor] || 0) + (Number(r['Valor Bruto']) || 0);
         });
 
-        // Actualizar select de ejercicio
-        const ejerciciosSorted = Array.from(ejercicios).sort();
-        const selectEjercicio = document.getElementById('filtro-ejercicio');
-        const opcionesOriginales = selectEjercicio.innerHTML;
-        selectEjercicio.innerHTML = opcionesOriginales + ejerciciosSorted.map(e => `<option value="${e}">${e}</option>`).join('');
+        const vigenciasOrdenadas = Array.from(vigencias).sort();
+        const valoresVigencia = vigenciasOrdenadas.map(v => porVigencia[v] || 0);
+        const countVigencia = vigenciasOrdenadas.map(v => datosFiltrados.filter(r => r['Ejercicio'] === v).length);
 
-        // Gráfica COMBO (barras + línea)
         const ctxCombo = document.getElementById('grafico-combo');
-        const ejerciciosOrdenados = ejerciciosSorted;
-        const valoresEjercicio = ejerciciosOrdenados.map(e => porEjercicio[e] || 0);
-        const countEjercicio = ejerciciosOrdenados.map(e => 
-            datosFiltrados.filter(r => r['Ejercicio'] === e).length
-        );
-
         if (chartCombo) chartCombo.destroy();
         chartCombo = new Chart(ctxCombo, {
             type: 'bar',
             data: {
-                labels: ejerciciosOrdenados,
+                labels: vigenciasOrdenadas,
                 datasets: [
                     {
-                        label: 'Valor Bruto por Ejercicio Fiscal',
-                        data: valoresEjercicio,
+                        label: 'Valor Bruto',
+                        data: valoresVigencia,
                         backgroundColor: '#667eea',
-                        borderColor: '#667eea',
-                        borderWidth: 2,
                         borderRadius: 6,
                         yAxisID: 'y'
                     },
                     {
-                        label: 'Nº Registros',
-                        data: countEjercicio,
+                        label: 'Nº Transacciones',
+                        data: countVigencia,
                         type: 'line',
                         borderColor: '#f5576c',
                         backgroundColor: 'rgba(245, 87, 108, 0.1)',
@@ -184,35 +208,23 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: true,
                 plugins: {
-                    legend: { display: true, labels: { font: { size: 12, weight: 'bold' }, color: '#333' } },
-                    title: { display: true, text: 'Valor Bruto por Ejercicio Fiscal', font: { size: 14, weight: 'bold' }, color: '#333' }
+                    legend: { display: true, labels: { font: { size: 12, weight: 'bold' } } },
+                    title: { display: true, text: 'Pagos por Vigencia', font: { size: 14, weight: 'bold' } }
                 },
                 scales: {
-                    y: {
-                        type: 'linear',
-                        position: 'left',
-                        ticks: { callback: v => '$' + (v / 1000000).toFixed(0) + 'M' }
-                    },
-                    y1: {
-                        type: 'linear',
-                        position: 'right',
-                        grid: { drawOnChartArea: false },
-                        ticks: { callback: v => v.toLocaleString() }
-                    }
+                    y: { ticks: { callback: v => '$' + (v / 1000000).toFixed(0) + 'M' } },
+                    y1: { position: 'right', grid: { drawOnChartArea: false } }
                 }
             }
         });
 
-        // Gráfica TOP 10 PROVEEDORES (horizontal)
-        const ctxProveedores = document.getElementById('grafico-proveedores');
         const topProveedores = Object.entries(porProveedor).sort((a, b) => b[1] - a[1]).slice(0, 10);
-        const nombresTop = topProveedores.map(p => p[0].substring(0, 30));
+        const nombresTop = topProveedores.map(p => p[0].substring(0, 25));
         const valoresTop = topProveedores.map(p => p[1]);
-
         const colores = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#00f2fe', '#43e97b', '#fa7231', '#ff6348', '#ee5a6f'];
 
+        const ctxProveedores = document.getElementById('grafico-proveedores');
         if (chartProveedores) chartProveedores.destroy();
         chartProveedores = new Chart(ctxProveedores, {
             type: 'bar',
@@ -221,42 +233,46 @@ document.addEventListener('DOMContentLoaded', function() {
                 datasets: [{
                     label: 'Valor Pagado',
                     data: valoresTop,
-                    backgroundColor: colores,
-                    borderColor: colores,
-                    borderWidth: 2
+                    backgroundColor: colores
                 }]
             },
             options: {
                 indexAxis: 'y',
                 responsive: true,
-                maintainAspectRatio: true,
                 plugins: {
-                    legend: { display: true },
-                    title: { display: true, text: 'Top 10 Proveedores por Valor Bruto', font: { size: 14, weight: 'bold' }, color: '#333' }
+                    title: { display: true, text: 'Top 10 Proveedores por Monto', font: { size: 14, weight: 'bold' } }
                 },
-                scales: {
-                    x: { ticks: { callback: v => '$' + (v / 1000000).toFixed(0) + 'M' } }
-                }
+                scales: { x: { ticks: { callback: v => '$' + (v / 1000000).toFixed(0) + 'M' } } }
             }
         });
     }
 
     inputHistorico.addEventListener('change', enableBtn);
-    btnLimpiar.addEventListener('click', () => { filtroContratista.value = ''; filtroReferencia.value = ''; filtroEjercicio.value = ''; aplicarFiltros(); });
-    btnGraficas.addEventListener('click', () => { contenedorGraficas.style.display = 'block'; contenedorTabla.style.display = 'none'; btnGraficas.style.opacity = '1'; btnTabla.style.opacity = '0.6'; });
-    btnTabla.addEventListener('click', () => { contenedorGraficas.style.display = 'none'; contenedorTabla.style.display = 'block'; btnTabla.style.opacity = '1'; btnGraficas.style.opacity = '0.6'; });
+    btnLimpiar.addEventListener('click', () => {
+        filtroContratista.value = '';
+        filtroReferencia.value = '';
+        filtroFechaDesde.value = '';
+        filtroFechaHasta.value = '';
+        filtroVigencia.value = '';
+        aplicarFiltros();
+    });
+
+    btnGraficas.addEventListener('click', () => { contenedorGraficas.style.display = 'block'; contenedorTabla.style.display = 'none'; });
+    btnTabla.addEventListener('click', () => { contenedorGraficas.style.display = 'none'; contenedorTabla.style.display = 'block'; });
     
     btnDescargar.addEventListener('click', () => {
         if (!datosFiltrados.length) return;
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.json_to_sheet(datosFiltrados);
         XLSX.utils.book_append_sheet(wb, ws, 'Historico');
-        XLSX.writeFile(wb, `Historico_Pagos_Filtrado_${new Date().toISOString().split('T')[0]}.xlsx`);
+        XLSX.writeFile(wb, `Historico_${new Date().toISOString().split('T')[0]}.xlsx`);
     });
 
     filtroContratista.addEventListener('keyup', aplicarFiltros);
     filtroReferencia.addEventListener('keyup', aplicarFiltros);
-    filtroEjercicio.addEventListener('change', aplicarFiltros);
+    filtroFechaDesde.addEventListener('change', aplicarFiltros);
+    filtroFechaHasta.addEventListener('change', aplicarFiltros);
+    filtroVigencia.addEventListener('change', aplicarFiltros);
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -275,7 +291,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (!datosCompletos.length) throw new Error('El archivo está vacío');
 
+            construirResumenContratistas();
             datosFiltrados = [...datosCompletos];
+
+            // Llenar select de vigencias
+            const vigencias = [...new Set(datosCompletos.map(r => r['Ejercicio']))].sort();
+            vigencias.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = `📅 ${v}`;
+                filtroVigencia.appendChild(opt);
+            });
+
             mostrarMetricas(datosFiltrados);
             mostrarGraficos();
             mostrarTabla();
