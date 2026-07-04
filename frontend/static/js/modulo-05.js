@@ -1,380 +1,404 @@
+const C = {
+  navy: "#1a2742", navyLt: "#1e3a5f", cyan: "#5dade2", verde: "#27ae60", amar: "#f39c12",
+  rojo: "#e74c3c", texto: "#2c3e50", muted: "#7f8c8d", bg: "#f0f2f5", border: "#e8edf2",
+  violet: "#8e44ad", teal: "#1abc9c", orange: "#e67e22"
+};
+const PAL = [C.cyan, C.verde, C.amar, C.rojo, C.violet, C.orange, C.teal, "#d63031", "#0984e3", "#e84393"];
+
+const fmtCOP = v => v >= 1e9 ? `$${(v / 1e9).toFixed(2)}MM` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${(v / 1e3).toFixed(0)}K`;
+const fmtNum = v => v.toLocaleString("es-CO");
+
+let DATOS_GLOBAL = null;
+let CHARTS = {};
+
+function gc(headers, terms) {
+  return headers.findIndex(h => terms.some(t => h.toLowerCase().includes(t.toLowerCase())));
+}
+
+function gcExacto(headers, terms) {
+  const exacto = headers.findIndex(h => terms.some(t => h.trim().toLowerCase() === t.toLowerCase()));
+  return exacto >= 0 ? exacto : gc(headers, terms);
+}
+
+function parseFecha(val) {
+  if (!val) return "";
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return "";
+    const d = String(val.getDate()).padStart(2, "0");
+    const m = String(val.getMonth() + 1).padStart(2, "0");
+    return `${d}/${m}/${val.getFullYear()}`;
+  }
+  if (typeof val === "number") {
+    const dt = new Date(Math.round((val - 25569) * 86400 * 1000));
+    if (isNaN(dt.getTime())) return "";
+    const d = String(dt.getUTCDate()).padStart(2, "0");
+    const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
+    return `${d}/${m}/${dt.getUTCFullYear()}`;
+  }
+  const s = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const [y, m, d] = s.slice(0, 10).split("-");
+    return `${d}/${m}/${y}`;
+  }
+  return s.slice(0, 10);
+}
+
+function procesarExcel(raw) {
+  const headers = raw[0].map(c => String(c || "").trim());
+  const rows = raw.slice(1);
+  
+  const iNombre = gcExacto(headers, ["nombre"]);
+  const iNroId = gc(headers, ["nº identificación", "identificacion"]);
+  const iBruto = gc(headers, ["valor bruto"]);
+  const iEj = gc(headers, ["ejercicio"]);
+  const iRef = gc(headers, ["referencia"]);
+  const iFecha = gc(headers, ["fecha de pago"]);
+  const iAsig = gc(headers, ["asignación", "asignacion"]);
+  const iAsig3 = gc(headers, ["asignación3", "asignacion3"]);
+
+  const filas = [];
+  for (const row of rows) {
+    const bruto = Number(row[iBruto]) || 0;
+    if (bruto <= 0) continue;
+    filas.push({
+      nombre: String(row[iNombre] || "").trim(),
+      nroId: String(row[iNroId] || "").trim(),
+      valorBruto: bruto,
+      ejercicio: Number(row[iEj]) || 0,
+      referencia: String(row[iRef] || "").trim(),
+      fechaPago: parseFecha(row[iFecha]),
+      asignacion: String(row[iAsig] || "").trim(),
+      asignacion3: String(row[iAsig3] || "").trim()
+    });
+  }
+
+  const ejerciciosSet = [...new Set(filas.map(r => r.ejercicio))].filter(Boolean).sort();
+  const totalBruto = filas.reduce((s, r) => s + r.valorBruto, 0);
+  const totalRegistros = filas.length;
+  const proveedoresUnicos = new Set(filas.map(r => r.nroId)).size;
+
+  return { filas, ejerciciosSet, totalBruto, totalRegistros, proveedoresUnicos };
+}
+
+function procesarGraficas(filas, ejerciciosSet) {
+  // G1: Combo por ejercicio
+  const g1 = ejerciciosSet.map(e => ({
+    ejercicio: String(e),
+    bruto: filas.filter(r => r.ejercicio === e).reduce((s, r) => s + r.valorBruto, 0),
+    count: filas.filter(r => r.ejercicio === e).length
+  }));
+
+  // G2: Top 10 por nombre
+  const mapaNomb = {};
+  for (const r of filas) mapaNomb[r.nombre] = (mapaNomb[r.nombre] || 0) + r.valorBruto;
+  const g2 = Object.entries(mapaNomb).sort((a, b) => b[1] - a[1]).slice(0, 10)
+    .map(([nombre, bruto]) => ({ nombre: nombre.slice(0, 32), bruto }));
+
+  // G3: Top 10 por NIT (Pie)
+  const mapaNit = {};
+  for (const r of filas) {
+    if (!mapaNit[r.nroId]) mapaNit[r.nroId] = { nombre: r.nombre, bruto: 0 };
+    mapaNit[r.nroId].bruto += r.valorBruto;
+  }
+  const g3 = Object.entries(mapaNit).sort((a, b) => b[1].bruto - a[1].bruto).slice(0, 10)
+    .map(([nit, v]) => ({ nit, nombre: v.nombre.slice(0, 28), bruto: v.bruto }));
+
+  // G4: Top 10 referencias
+  const mapaRef = {};
+  for (const r of filas) {
+    const k = r.referencia || "SIN REF";
+    if (!mapaRef[k]) mapaRef[k] = { bruto: 0, count: 0 };
+    mapaRef[k].bruto += r.valorBruto;
+    mapaRef[k].count += 1;
+  }
+  const g4 = Object.entries(mapaRef).sort((a, b) => b[1].bruto - a[1].bruto).slice(0, 10)
+    .map(([ref, v]) => ({ ref: ref.slice(0, 14), bruto: v.bruto, count: v.count }));
+
+  // G5: Top 5 proveedores evolución anual
+  const top5nombres = Object.entries(mapaNomb).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([n]) => n);
+  const g5 = ejerciciosSet.map(e => {
+    const row = { ejercicio: String(e) };
+    for (const n of top5nombres) {
+      row[n.slice(0, 16)] = filas.filter(r => r.ejercicio === e && r.nombre === n).reduce((s, r) => s + r.valorBruto, 0);
+    }
+    return row;
+  });
+  const g5nombres = top5nombres.map(n => n.slice(0, 16));
+
+  // G6: NITs únicos por ejercicio
+  const g6 = ejerciciosSet.map(e => ({
+    ejercicio: String(e),
+    nits: new Set(filas.filter(r => r.ejercicio === e).map(r => r.nroId)).size
+  }));
+
+  // G7: Scatter referencias
+  const g7 = g4.map(r => ({ ref: r.ref, monto: r.bruto, count: r.count }));
+
+  return { g1, g2, g3, g4, g5, g5nombres, g6, g7 };
+}
+
+function mostrarMetricas(datos) {
+  const { totalBruto, totalRegistros, proveedoresUnicos, ejerciciosSet } = datos;
+  const mayorEj = datos.g1.reduce((a, b) => a.bruto > b.bruto ? a : b, datos.g1[0]);
+
+  const html = `
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:15px;">
+      <div style="background:white; border-radius:10px; padding:15px; border-left:3px solid ${C.cyan};">
+        <div style="font-size:11px; color:${C.muted}; margin-bottom:8px;">💰 Valor Bruto Total</div>
+        <div style="font-size:22px; font-weight:bold; color:${C.cyan};">${fmtCOP(totalBruto)}</div>
+        <div style="font-size:10px; color:${C.muted}; margin-top:5px;">${ejerciciosSet[0]}–${ejerciciosSet[ejerciciosSet.length - 1]}</div>
+      </div>
+      <div style="background:white; border-radius:10px; padding:15px; border-left:3px solid ${C.verde};">
+        <div style="font-size:11px; color:${C.muted}; margin-bottom:8px;">📋 Registros SAP</div>
+        <div style="font-size:22px; font-weight:bold; color:${C.verde};">${fmtNum(totalRegistros)}</div>
+        <div style="font-size:10px; color:${C.muted}; margin-top:5px;">transacciones</div>
+      </div>
+      <div style="background:white; border-radius:10px; padding:15px; border-left:3px solid ${C.amar};">
+        <div style="font-size:11px; color:${C.muted}; margin-bottom:8px;">🏢 Proveedores únicos</div>
+        <div style="font-size:22px; font-weight:bold; color:${C.amar};">${fmtNum(proveedoresUnicos)}</div>
+        <div style="font-size:10px; color:${C.muted}; margin-top:5px;">por Nº identificación</div>
+      </div>
+      <div style="background:white; border-radius:10px; padding:15px; border-left:3px solid ${C.rojo};">
+        <div style="font-size:11px; color:${C.muted}; margin-bottom:8px;">📅 Mayor ejercicio</div>
+        <div style="font-size:22px; font-weight:bold; color:${C.rojo};">${mayorEj.ejercicio}</div>
+        <div style="font-size:10px; color:${C.muted}; margin-top:5px;">${fmtCOP(mayorEj.bruto)}</div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('metricas-container').innerHTML = html;
+  document.getElementById('rango-ejercicios').textContent = `${ejerciciosSet[0]}–${ejerciciosSet[ejerciciosSet.length - 1]}`;
+}
+
+function crearGraficas(datos) {
+  const { g1, g2, g3, g4, g5, g5nombres, g6, g7 } = datos;
+
+  // Destruir gráficas anteriores
+  Object.values(CHARTS).forEach(c => c.destroy?.());
+  CHARTS = {};
+
+  // G1: Combo
+  CHARTS.g1 = new Chart(document.getElementById('grafico-1'), {
+    type: 'bar',
+    data: {
+      labels: g1.map(d => d.ejercicio),
+      datasets: [
+        { label: 'Valor Bruto', data: g1.map(d => d.bruto), backgroundColor: C.cyan, yAxisID: 'y' },
+        { label: 'Registros', data: g1.map(d => d.count), type: 'line', borderColor: C.amar, backgroundColor: 'rgba(243, 156, 18, 0.1)', borderWidth: 2, yAxisID: 'y1', fill: true, tension: 0.4 }
+      ]
+    },
+    options: { responsive: true, plugins: { title: { display: true, text: '① Valor Bruto por Ejercicio', color: C.navy } }, scales: { y: { ticks: { callback: v => fmtCOP(v) } }, y1: { position: 'right', grid: { drawOnChartArea: false } } } }
+  });
+
+  // G2: Top 10 Horizontal
+  CHARTS.g2 = new Chart(document.getElementById('grafico-2'), {
+    type: 'bar',
+    data: {
+      labels: g2.map(d => d.nombre),
+      datasets: [{ label: 'Valor Bruto', data: g2.map(d => d.bruto), backgroundColor: PAL }]
+    },
+    options: { indexAxis: 'y', responsive: true, plugins: { title: { display: true, text: '② Top 10 Proveedores' } }, scales: { x: { ticks: { callback: v => fmtCOP(v) } } } }
+  });
+
+  // G3: Pie NITs
+  CHARTS.g3 = new Chart(document.getElementById('grafico-3'), {
+    type: 'doughnut',
+    data: {
+      labels: g3.map(d => d.nit),
+      datasets: [{ data: g3.map(d => d.bruto), backgroundColor: PAL }]
+    },
+    options: { responsive: true, plugins: { title: { display: true, text: '③ Top 10 por NIT' } } }
+  });
+
+  // G4: Referencias
+  CHARTS.g4 = new Chart(document.getElementById('grafico-4'), {
+    type: 'bar',
+    data: {
+      labels: g4.map(d => d.ref),
+      datasets: [{ label: 'Valor Bruto', data: g4.map(d => d.bruto), backgroundColor: PAL }]
+    },
+    options: { responsive: true, plugins: { title: { display: true, text: '④ Top 10 Referencias' } }, scales: { y: { ticks: { callback: v => fmtCOP(v) } } } }
+  });
+
+  // G5: Timeline Top 5
+  CHARTS.g5 = new Chart(document.getElementById('grafico-5'), {
+    type: 'line',
+    data: {
+      labels: g5.map(d => d.ejercicio),
+      datasets: g5nombres.map((n, i) => ({
+        label: n,
+        data: g5.map(d => d[n] || 0),
+        borderColor: PAL[i],
+        backgroundColor: PAL[i] + '11',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4
+      }))
+    },
+    options: { responsive: true, plugins: { title: { display: true, text: '⑤ Evolución Top 5 Proveedores' } }, scales: { y: { ticks: { callback: v => fmtCOP(v) } } } }
+  });
+
+  // G6: NITs únicos
+  CHARTS.g6 = new Chart(document.getElementById('grafico-6'), {
+    type: 'bar',
+    data: {
+      labels: g6.map(d => d.ejercicio),
+      datasets: [{ label: 'NITs únicos', data: g6.map(d => d.nits), backgroundColor: C.amar }]
+    },
+    options: { responsive: true, plugins: { title: { display: true, text: '⑥ NITs únicos/Ejercicio' } } }
+  });
+
+  // G7: Scatter
+  CHARTS.g7 = new Chart(document.getElementById('grafico-7'), {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        label: 'Referencias',
+        data: g7.map(d => ({ x: d.count, y: d.monto })),
+        backgroundColor: PAL.map((c, i) => PAL[i % PAL.length])
+      }]
+    },
+    options: { responsive: true, plugins: { title: { display: true, text: '⑦ Monto vs Frecuencia' } }, scales: { x: { title: { display: true, text: 'N° Registros' } }, y: { title: { display: true, text: 'Valor Bruto' }, ticks: { callback: v => fmtCOP(v) } } } }
+  });
+}
+
+function aplicarFiltros() {
+  const q = document.getElementById('filtro-contratista').value.toLowerCase();
+  const qRef = document.getElementById('filtro-referencia').value.toLowerCase();
+  const fechaDesde = document.getElementById('filtro-fecha-desde').value;
+  const fechaHasta = document.getElementById('filtro-fecha-hasta').value;
+
+  const filtradas = DATOS_GLOBAL.filas.filter(r => {
+    const campoQ = `${r.nombre} ${r.nroId}`.toLowerCase();
+    const okQ = !q || campoQ.includes(q);
+    const okRef = !qRef || r.referencia.toLowerCase().includes(qRef);
+    return okQ && okRef;
+  });
+
+  const datosActualizados = {
+    ...DATOS_GLOBAL,
+    filas: filtradas,
+    totalBruto: filtradas.reduce((s, r) => s + r.valorBruto, 0),
+    totalRegistros: filtradas.length,
+    ...procesarGraficas(filtradas, DATOS_GLOBAL.ejerciciosSet)
+  };
+
+  mostrarMetricas(datosActualizados);
+  crearGraficas(datosActualizados);
+  mostrarTabla(filtradas);
+
+  // Ficha contratista
+  if (q && filtradas.length > 0) {
+    const primerPago = filtradas[0];
+    document.getElementById('contratista-nombre').textContent = primerPago.nombre;
+    document.getElementById('contratista-nit').textContent = `NIT: ${primerPago.nroId}`;
+    const totalContratista = filtradas.reduce((s, r) => s + r.valorBruto, 0);
+    document.getElementById('contratista-resumen').innerHTML = `
+      <div style="background:rgba(255,255,255,0.1); padding:10px; border-radius:6px; text-align:center;">
+        <div style="font-size:10px; color:rgba(255,255,255,0.6);">Total pagado</div>
+        <div style="font-size:18px; font-weight:bold; color:${C.cyan};">${fmtCOP(totalContratista)}</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.1); padding:10px; border-radius:6px; text-align:center;">
+        <div style="font-size:10px; color:rgba(255,255,255,0.6);">Registros</div>
+        <div style="font-size:18px; font-weight:bold; color:${C.amar};">${fmtNum(filtradas.length)}</div>
+      </div>
+    `;
+    document.getElementById('ficha-contratista').style.display = 'block';
+  } else {
+    document.getElementById('ficha-contratista').style.display = 'none';
+  }
+}
+
+function mostrarTabla(filas) {
+  let html = '<table style="width:100%; border-collapse:collapse; font-size:11px;"><thead><tr style="background:' + C.navy + '; color:white;">';
+  ['Nombre', 'NIT', 'Valor Bruto', 'Ejercicio', 'Referencia', 'Fecha Pago'].forEach(h => {
+    html += `<th style="padding:10px; text-align:left;">${h}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  filas.slice(0, 50).forEach((r, i) => {
+    html += `<tr style="border-bottom:1px solid ${C.border}; background:${i % 2 === 0 ? 'white' : C.bg};">
+      <td style="padding:8px;">${r.nombre}</td>
+      <td style="padding:8px; font-family:monospace;">${r.nroId}</td>
+      <td style="padding:8px; color:${C.cyan}; font-weight:bold;">${fmtCOP(r.valorBruto)}</td>
+      <td style="padding:8px;">${r.ejercicio}</td>
+      <td style="padding:8px;">${r.referencia}</td>
+      <td style="padding:8px; color:${C.verde};">${r.fechaPago || '—'}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('contenedor-tabla').innerHTML = html;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('form-historico');
-    if (!form) return;
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input-historico');
+  const pantallaCarga = document.getElementById('pantalla-carga');
+  const pantallaPrincipal = document.getElementById('pantalla-principal');
 
-    const dropzone = document.getElementById('drop-historico-pagos');
-    const inputHistorico = document.getElementById('input-historico-pagos');
-    const btnCargar = document.getElementById('btn-cargar-historico');
-    const alertaDiv = document.getElementById('alerta-historico');
-    const estadoDiv = document.getElementById('estado-historico');
-    const resultadosDiv = document.getElementById('resultados-historico');
-    const metricasDiv = document.getElementById('metricas-historico');
-    const tarjetaContratista = document.getElementById('tarjeta-contratista');
-    
-    const filtroContratista = document.getElementById('filtro-contratista');
-    const filtroReferencia = document.getElementById('filtro-referencia');
-    const filtroFechaDesde = document.getElementById('filtro-fecha-desde');
-    const filtroFechaHasta = document.getElementById('filtro-fecha-hasta');
-    const filtroVigencia = document.getElementById('filtro-vigencia');
-    const btnLimpiar = document.getElementById('btn-limpiar-filtros');
-    const btnGraficas = document.getElementById('btn-vista-graficas');
-    const btnTabla = document.getElementById('btn-vista-tabla');
-    const btnDescargar = document.getElementById('btn-descargar-filtrado');
-    const contenedorGraficas = document.getElementById('contenedor-graficas');
-    const contenedorTabla = document.getElementById('contenedor-tabla');
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.opacity = '0.7'; });
+  dropZone.addEventListener('dragleave', () => { dropZone.style.opacity = '1'; });
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    if (e.dataTransfer.files[0]) procesarArchivo(e.dataTransfer.files[0]);
+  });
 
-    let datosCompletos = [];
-    let datosFiltrados = [];
-    let resumenContratistas = {};
-    let chartCombo = null;
-    let chartProveedores = null;
+  fileInput.addEventListener('change', e => {
+    if (e.target.files[0]) procesarArchivo(e.target.files[0]);
+  });
 
-    dropzone.addEventListener('click', () => inputHistorico.click());
-    ['dragover', 'dragenter'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.style.background = '#1a1f2e'; }));
-    ['dragleave', 'drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.style.background = ''; }));
-    dropzone.addEventListener('drop', e => { if (e.dataTransfer.files.length) { inputHistorico.files = e.dataTransfer.files; enableBtn(); } });
+  function procesarArchivo(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+      DATOS_GLOBAL = procesarExcel(raw);
+      DATOS_GLOBAL = { ...DATOS_GLOBAL, ...procesarGraficas(DATOS_GLOBAL.filas, DATOS_GLOBAL.ejerciciosSet) };
 
-    function enableBtn() { btnCargar.disabled = !inputHistorico.files.length; }
+      // Rellenar select vigencias
+      const selectVigencia = document.getElementById('filtro-vigencia');
+      DATOS_GLOBAL.ejerciciosSet.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        selectVigencia.appendChild(opt);
+      });
 
-    function formatCurrency(value) {
-        return new Intl.NumberFormat('es-CO', {style: 'currency', currency: 'COP', minimumFractionDigits: 0}).format(value || 0);
-    }
+      pantallaCarga.style.display = 'none';
+      pantallaPrincipal.style.display = 'block';
 
-    function formatDate(dateStr) {
-        if (!dateStr) return '';
-        try {
-            const parts = String(dateStr).split('-');
-            if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-            return dateStr;
-        } catch { return dateStr; }
-    }
+      mostrarMetricas(DATOS_GLOBAL);
+      crearGraficas(DATOS_GLOBAL);
+      mostrarTabla(DATOS_GLOBAL.filas);
+    };
+    reader.readAsArrayBuffer(file);
+  }
 
-    function mostrarAlerta(msg) {
-        alertaDiv.textContent = msg;
-        alertaDiv.style.display = 'block';
-    }
+  document.getElementById('btn-buscar').addEventListener('click', aplicarFiltros);
+  document.getElementById('btn-limpiar').addEventListener('click', () => {
+    document.getElementById('filtro-contratista').value = '';
+    document.getElementById('filtro-referencia').value = '';
+    document.getElementById('filtro-fecha-desde').value = '';
+    document.getElementById('filtro-fecha-hasta').value = '';
+    aplicarFiltros();
+  });
 
-    function mostrarMetricas(datos) {
-        const totalPagado = datos.reduce((sum, r) => sum + (Number(r['Valor Bruto']) || 0), 0);
-        const totalTransacciones = datos.length;
-        const proveedoresUnicos = new Set(datos.map(r => r['Nombre'])).size;
-        const ejercicios = [...new Set(datos.map(r => r['Ejercicio']))].sort().join(', ');
+  document.getElementById('btn-graficas').addEventListener('click', () => {
+    document.getElementById('contenedor-graficas').style.display = 'block';
+    document.getElementById('contenedor-tabla').style.display = 'none';
+  });
 
-        metricasDiv.innerHTML = `
-            <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:white; padding:25px; border-radius:8px;">
-                <div style="font-size:28px; font-weight:bold;">${formatCurrency(totalPagado)}</div>
-                <div style="font-size:12px; margin-top:8px; opacity:0.9;">Valor Bruto Total</div>
-            </div>
-            <div style="background:linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color:white; padding:25px; border-radius:8px;">
-                <div style="font-size:28px; font-weight:bold;">${totalTransacciones.toLocaleString()}</div>
-                <div style="font-size:12px; margin-top:8px; opacity:0.9;">Registros SAP</div>
-            </div>
-            <div style="background:linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color:white; padding:25px; border-radius:8px;">
-                <div style="font-size:28px; font-weight:bold;">${proveedoresUnicos}</div>
-                <div style="font-size:12px; margin-top:8px; opacity:0.9;">Proveedores únicos</div>
-            </div>
-            <div style="background:linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color:white; padding:25px; border-radius:8px;">
-                <div style="font-size:28px; font-weight:bold;">${ejercicios}</div>
-                <div style="font-size:12px; margin-top:8px; opacity:0.9;">Mayor ejercicio</div>
-            </div>
-        `;
-    }
+  document.getElementById('btn-tabla').addEventListener('click', () => {
+    document.getElementById('contenedor-graficas').style.display = 'none';
+    document.getElementById('contenedor-tabla').style.display = 'block';
+  });
 
-    function construirResumenContratistas() {
-        resumenContratistas = {};
-        datosCompletos.forEach(r => {
-            const nombre = r['Nombre'] || 'Sin nombre';
-            if (!resumenContratistas[nombre]) {
-                resumenContratistas[nombre] = {
-                    total: 0,
-                    transacciones: 0,
-                    ultimaFecha: null,
-                    nit: r['Nº identificación'] || '',
-                    asignaciones: new Set(),
-                    vigencias: new Set()
-                };
-            }
-            resumenContratistas[nombre].total += Number(r['Valor Bruto']) || 0;
-            resumenContratistas[nombre].transacciones += 1;
-            resumenContratistas[nombre].asignaciones.add(r['Referencia'] || 'Sin ref');
-            resumenContratistas[nombre].vigencias.add(r['Ejercicio'] || 'Sin año');
-            const fecha = r['Fecha de pago'];
-            if (fecha && (!resumenContratistas[nombre].ultimaFecha || fecha > resumenContratistas[nombre].ultimaFecha)) {
-                resumenContratistas[nombre].ultimaFecha = fecha;
-            }
-        });
-    }
-
-    function mostrarTarjetaContratista(nombreContratista) {
-        const resumen = resumenContratistas[nombreContratista];
-        if (!resumen) {
-            tarjetaContratista.style.display = 'none';
-            return;
-        }
-
-        const asignacionesArr = Array.from(resumen.asignaciones).slice(0, 3);
-        const vigenciasArr = Array.from(resumen.vigencias).sort();
-
-        document.getElementById('contratista-nombre').textContent = nombreContratista;
-        document.getElementById('contratista-nit').textContent = `NIT: ${resumen.nit}`;
-
-        const resumenHtml = `
-            <div style="background:#0f1419; padding:12px; border-radius:6px; text-align:center;">
-                <div style="font-size:20px; font-weight:bold; color:#667eea;">${formatCurrency(resumen.total)}</div>
-                <div style="font-size:11px; color:#999; margin-top:5px;">Total pagado</div>
-            </div>
-            <div style="background:#0f1419; padding:12px; border-radius:6px; text-align:center;">
-                <div style="font-size:20px; font-weight:bold; color:#f5576c;">${resumen.transacciones}</div>
-                <div style="font-size:11px; color:#999; margin-top:5px;">Registros</div>
-            </div>
-            <div style="background:#0f1419; padding:12px; border-radius:6px; text-align:center;">
-                <div style="font-size:20px; font-weight:bold; color:#43e97b;">${formatDate(resumen.ultimaFecha)}</div>
-                <div style="font-size:11px; color:#999; margin-top:5px;">Último pago</div>
-            </div>
-            <div style="background:#0f1419; padding:12px; border-radius:6px; text-align:center;">
-                <div style="font-size:20px; font-weight:bold; color:#4facfe;">${vigenciasArr.join(' - ')}</div>
-                <div style="font-size:11px; color:#999; margin-top:5px;">Ejercicios activos</div>
-            </div>
-        `;
-        document.getElementById('contratista-resumen').innerHTML = resumenHtml;
-
-        const asignacionesHtml = `<strong>Asignaciones:</strong> ${asignacionesArr.map(a => `<span style="display:inline-block; background:#333; padding:6px 12px; border-radius:4px; margin-right:8px; margin-top:8px; font-size:11px;">${a}</span>`).join('')}`;
-        document.getElementById('contratista-asignaciones').innerHTML = asignacionesHtml;
-
-        tarjetaContratista.style.display = 'block';
-    }
-
-    function aplicarFiltros() {
-        const busqContratista = filtroContratista.value.toLowerCase();
-        const busqReferencia = filtroReferencia.value.toLowerCase();
-        const fechaDesde = filtroFechaDesde.value ? new Date(filtroFechaDesde.value) : null;
-        const fechaHasta = filtroFechaHasta.value ? new Date(filtroFechaHasta.value) : null;
-        const vigencia = filtroVigencia.value;
-
-        datosFiltrados = datosCompletos.filter(r => {
-            const nombre = String(r['Nombre'] || '').toLowerCase();
-            const nit = String(r['Nº identificación'] || '').toLowerCase();
-            const referencia = String(r['Referencia'] || '').toLowerCase();
-            const vig = String(r['Ejercicio'] || '');
-
-            const cumpleContratista = !busqContratista || nombre.includes(busqContratista) || nit.includes(busqContratista);
-            const cumpleReferencia = !busqReferencia || referencia.includes(busqReferencia);
-            const cumpleVigencia = !vigencia || vig === vigencia;
-
-            let cumpleFecha = true;
-            if (fechaDesde || fechaHasta) {
-                const fecha = r['Fecha de pago'] ? new Date(r['Fecha de pago']) : null;
-                if (fecha) {
-                    if (fechaDesde && fecha < fechaDesde) cumpleFecha = false;
-                    if (fechaHasta && fecha > fechaHasta) cumpleFecha = false;
-                }
-            }
-
-            return cumpleContratista && cumpleReferencia && cumpleVigencia && cumpleFecha;
-        });
-
-        if (busqContratista && Object.keys(resumenContratistas).some(c => c.toLowerCase().includes(busqContratista))) {
-            const contratista = Object.keys(resumenContratistas).find(c => c.toLowerCase().includes(busqContratista));
-            mostrarTarjetaContratista(contratista);
-        } else {
-            tarjetaContratista.style.display = 'none';
-        }
-
-        btnTabla.textContent = `📋 Tabla (${datosFiltrados.length})`;
-        mostrarGraficos();
-        mostrarTabla();
-    }
-
-    function mostrarTabla() {
-        if (!datosFiltrados.length) {
-            contenedorTabla.innerHTML = '<p style="color:#999;">No hay datos para mostrar.</p>';
-            return;
-        }
-
-        const columnas = ['Nombre', 'Nº identificación', 'Valor Bruto', 'Fecha de pago', 'Referencia', 'Ejercicio'];
-        let html = '<table style="width:100%; border-collapse:collapse; font-size:11px; color:#ccc;"><thead><tr style="background:#333; border-bottom:2px solid #667eea;">';
-
-        columnas.forEach(col => {
-            html += `<th style="padding:12px; text-align:left; font-weight:bold;">${col}</th>`;
-        });
-        html += '</tr></thead><tbody>';
-
-        datosFiltrados.forEach((fila, idx) => {
-            html += `<tr style="border-bottom:1px solid #333;">`;
-            columnas.forEach(col => {
-                let valor = fila[col] || '';
-                if (col === 'Valor Bruto') valor = formatCurrency(valor);
-                if (col === 'Fecha de pago') valor = formatDate(valor);
-                html += `<td style="padding:10px;">${valor}</td>`;
-            });
-            html += '</tr>';
-        });
-
-        html += '</tbody></table>';
-        contenedorTabla.innerHTML = html;
-    }
-
-    function mostrarGraficos() {
-        if (!datosFiltrados.length) return;
-
-        const porVigencia = {}, porProveedor = {};
-        const vigencias = new Set();
-        
-        datosFiltrados.forEach(r => {
-            const vig = r['Ejercicio'] || 'Sin año';
-            vigencias.add(vig);
-            porVigencia[vig] = (porVigencia[vig] || 0) + (Number(r['Valor Bruto']) || 0);
-
-            const proveedor = r['Nombre'] || 'Sin nombre';
-            porProveedor[proveedor] = (porProveedor[proveedor] || 0) + (Number(r['Valor Bruto']) || 0);
-        });
-
-        const vigenciasOrdenadas = Array.from(vigencias).sort();
-        const valoresVigencia = vigenciasOrdenadas.map(v => porVigencia[v] || 0);
-        const countVigencia = vigenciasOrdenadas.map(v => datosFiltrados.filter(r => r['Ejercicio'] === v).length);
-
-        const ctxCombo = document.getElementById('grafico-combo');
-        if (chartCombo) chartCombo.destroy();
-        chartCombo = new Chart(ctxCombo, {
-            type: 'bar',
-            data: {
-                labels: vigenciasOrdenadas,
-                datasets: [
-                    {
-                        label: 'Valor Bruto',
-                        data: valoresVigencia,
-                        backgroundColor: '#667eea',
-                        borderRadius: 6,
-                        yAxisID: 'y'
-                    },
-                    {
-                        label: 'Nº Transacciones',
-                        data: countVigencia,
-                        type: 'line',
-                        borderColor: '#f5576c',
-                        backgroundColor: 'rgba(245, 87, 108, 0.1)',
-                        borderWidth: 3,
-                        fill: true,
-                        tension: 0.4,
-                        yAxisID: 'y1',
-                        pointRadius: 5,
-                        pointBackgroundColor: '#f5576c'
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { labels: { color: '#ccc', font: { size: 11 } } },
-                    title: { display: true, text: 'Valor Bruto por Ejercicio Fiscal', color: '#ccc', font: { size: 12 } }
-                },
-                scales: {
-                    y: { ticks: { color: '#999', callback: v => '$' + (v / 1000000).toFixed(0) + 'M' }, grid: { color: '#333' } },
-                    y1: { position: 'right', ticks: { color: '#999' }, grid: { drawOnChartArea: false } },
-                    x: { ticks: { color: '#999' }, grid: { color: '#333' } }
-                }
-            }
-        });
-
-        const topProveedores = Object.entries(porProveedor).sort((a, b) => b[1] - a[1]).slice(0, 10);
-        const nombresTop = topProveedores.map(p => p[0].substring(0, 25));
-        const valoresTop = topProveedores.map(p => p[1]);
-        const colores = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#00f2fe', '#43e97b', '#fa7231', '#ff6348', '#ee5a6f'];
-
-        const ctxProveedores = document.getElementById('grafico-proveedores');
-        if (chartProveedores) chartProveedores.destroy();
-        chartProveedores = new Chart(ctxProveedores, {
-            type: 'bar',
-            data: {
-                labels: nombresTop,
-                datasets: [{
-                    label: 'Valor Pagado',
-                    data: valoresTop,
-                    backgroundColor: colores
-                }]
-            },
-            options: {
-                indexAxis: 'y',
-                responsive: true,
-                plugins: {
-                    title: { display: true, text: 'Top 10 Proveedores por Monto', color: '#ccc', font: { size: 12 } },
-                    legend: { labels: { color: '#ccc', font: { size: 11 } } }
-                },
-                scales: { x: { ticks: { color: '#999', callback: v => '$' + (v / 1000000).toFixed(0) + 'M' }, grid: { color: '#333' } }, y: { ticks: { color: '#999' }, grid: { color: '#333' } } }
-            }
-        });
-    }
-
-    inputHistorico.addEventListener('change', enableBtn);
-    btnLimpiar.addEventListener('click', () => {
-        filtroContratista.value = '';
-        filtroReferencia.value = '';
-        filtroFechaDesde.value = '';
-        filtroFechaHasta.value = '';
-        filtroVigencia.value = '';
-        tarjetaContratista.style.display = 'none';
-        aplicarFiltros();
-    });
-
-    btnGraficas.addEventListener('click', () => { contenedorGraficas.style.display = 'block'; contenedorTabla.style.display = 'none'; btnGraficas.style.opacity = '1'; btnTabla.style.opacity = '0.6'; });
-    btnTabla.addEventListener('click', () => { contenedorGraficas.style.display = 'none'; contenedorTabla.style.display = 'block'; btnTabla.style.opacity = '1'; btnGraficas.style.opacity = '0.6'; });
-    
-    btnDescargar.addEventListener('click', () => {
-        if (!datosFiltrados.length) return;
-        const wb = XLSX.utils.book_new();
-        const ws = XLSX.utils.json_to_sheet(datosFiltrados);
-        XLSX.utils.book_append_sheet(wb, ws, 'Historico');
-        XLSX.writeFile(wb, `Historico_${new Date().toISOString().split('T')[0]}.xlsx`);
-    });
-
-    filtroContratista.addEventListener('keyup', aplicarFiltros);
-    filtroReferencia.addEventListener('keyup', aplicarFiltros);
-    filtroFechaDesde.addEventListener('change', aplicarFiltros);
-    filtroFechaHasta.addEventListener('change', aplicarFiltros);
-    filtroVigencia.addEventListener('change', aplicarFiltros);
-
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        alertaDiv.style.display = 'none';
-        estadoDiv.style.display = 'block';
-        resultadosDiv.style.display = 'none';
-
-        try {
-            if (!window.XLSX) throw new Error('XLSX no cargado');
-            const archivo = inputHistorico.files[0];
-            if (!archivo) throw new Error('Selecciona un archivo');
-
-            const buf = await archivo.arrayBuffer();
-            const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
-            datosCompletos = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-
-            if (!datosCompletos.length) throw new Error('El archivo está vacío');
-
-            construirResumenContratistas();
-            datosFiltrados = [...datosCompletos];
-
-            const vigencias = [...new Set(datosCompletos.map(r => r['Ejercicio']))].sort();
-            vigencias.forEach(v => {
-                const opt = document.createElement('option');
-                opt.value = v;
-                opt.textContent = v;
-                filtroVigencia.appendChild(opt);
-            });
-
-            mostrarMetricas(datosFiltrados);
-            mostrarGraficos();
-            mostrarTabla();
-
-            resultadosDiv.style.display = 'block';
-            estadoDiv.style.display = 'none';
-            contenedorGraficas.style.display = 'block';
-            contenedorTabla.style.display = 'none';
-
-        } catch (err) {
-            mostrarAlerta(`❌ ${err.message}`);
-            estadoDiv.style.display = 'none';
-        }
-    });
-
-    enableBtn();
+  document.getElementById('btn-descargar').addEventListener('click', () => {
+    if (!DATOS_GLOBAL) return;
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(DATOS_GLOBAL.filas);
+    XLSX.utils.book_append_sheet(wb, ws, 'Historico');
+    XLSX.writeFile(wb, `Historico_${new Date().toISOString().split('T')[0]}.xlsx`);
+  });
 });
