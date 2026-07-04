@@ -1,4 +1,4 @@
-console.log('Módulo 06 listo');
+console.log('Módulo 06');
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
@@ -28,55 +28,94 @@ function procesar(archivo) {
 
 function mostrar(datos) {
   const vista = document.getElementById('vista-presupuestal');
+  if (!vista) return;
   
-  // Crear contenedor KPIs VISIBLE
-  let kpis = document.getElementById('kpis-06-container');
-  if (!kpis) {
-    kpis = document.createElement('div');
-    kpis.id = 'kpis-06-container';
-    kpis.style.cssText = 'display:grid; grid-template-columns:repeat(4, 1fr); gap:15px; margin:20px; background:white; padding:20px; border-radius:12px;';
-    vista.insertBefore(kpis, vista.querySelector('[style*="grid-template-columns"]'));
-  }
-  
-  const total = datos.length;
-  kpis.innerHTML = `
-    <div style="text-align:center; padding:15px; background:#667eea; color:white; border-radius:8px;">
-      <div style="font-size:12px;">Total Registros</div>
-      <div style="font-size:28px; font-weight:bold;">${total}</div>
+  // Crear div con KPIs ARRIBA DE TODO
+  const html = `
+    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:15px; margin:20px 0; padding:0 20px;">
+      <div style="text-align:center; padding:20px; background:#667eea; color:white; border-radius:8px;">
+        <div style="font-size:12px; opacity:0.8;">Total Registros</div>
+        <div style="font-size:32px; font-weight:bold;">${datos.length}</div>
+      </div>
+      <div style="text-align:center; padding:20px; background:#28a745; color:white; border-radius:8px;">
+        <div style="font-size:12px; opacity:0.8;">CRP Total</div>
+        <div style="font-size:32px; font-weight:bold;">$12.5M</div>
+      </div>
+      <div style="text-align:center; padding:20px; background:#ffc107; color:white; border-radius:8px;">
+        <div style="font-size:12px; opacity:0.8;">Girado</div>
+        <div style="font-size:32px; font-weight:bold;">$8.4M</div>
+      </div>
+      <div style="text-align:center; padding:20px; background:#17a2b8; color:white; border-radius:8px;">
+        <div style="font-size:12px; opacity:0.8;">% Ejecución</div>
+        <div style="font-size:32px; font-weight:bold;">67%</div>
+      </div>
     </div>
-    <div style="text-align:center; padding:15px; background:#28a745; color:white; border-radius:8px;">
-      <div style="font-size:12px;">CRP Total</div>
-      <div style="font-size:28px; font-weight:bold;">$12.5M</div>
-    </div>
-    <div style="text-align:center; padding:15px; background:#ffc107; color:white; border-radius:8px;">
-      <div style="font-size:12px;">Girado</div>
-      <div style="font-size:28px; font-weight:bold;">$8.4M</div>
-    </div>
-    <div style="text-align:center; padding:15px; background:#17a2b8; color:white; border-radius:8px;">
-      <div style="font-size:12px;">% Ejecución</div>
-      <div style="font-size:28px; font-weight:bold;">67%</div>
+    
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin:20px; margin-bottom:20px;">
+      <div style="background:white; padding:15px; border-radius:12px;"><canvas id="g1"></canvas></div>
+      <div style="background:white; padding:15px; border-radius:12px;"><canvas id="g2"></canvas></div>
+      <div style="background:white; padding:15px; border-radius:12px;"><canvas id="g3"></canvas></div>
+      <div style="background:white; padding:15px; border-radius:12px;"><canvas id="g4"></canvas></div>
+      <div style="background:white; padding:15px; border-radius:12px; grid-column:1/-1;"><canvas id="g5"></canvas></div>
     </div>
   `;
   
-  // Scroll a KPIs
-  setTimeout(() => {
-    kpis.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, 100);
+  // Insertar ANTES del primer elemento
+  vista.insertAdjacentHTML('afterbegin', html);
   
   // Gráficas
   setTimeout(() => {
-    const c1 = document.getElementById('grafico-crp-1');
-    const c2 = document.getElementById('grafico-crp-2');
-    const c3 = document.getElementById('grafico-crp-3');
-    const c4 = document.getElementById('grafico-crp-4');
-    const c5 = document.getElementById('grafico-crp-5');
-    
-    if (c1 && Chart) new Chart(c1, { type: 'bar', data: { labels: ['A','B','C'], datasets: [{data: [10,20,15], backgroundColor:'#667eea'}] }, options: {responsive:true} });
-    if (c2 && Chart) new Chart(c2, { type: 'doughnut', data: { labels: ['Girado','Pendiente'], datasets: [{data: [67,33], backgroundColor:['#28a745','#ffc107']}] }, options: {responsive:true} });
-    if (c3 && Chart) new Chart(c3, { type: 'line', data: { labels: ['M1','M2','M3','M4','M5','M6'], datasets: [{label:'Ejecución', data:[15,30,45,58,67,75], borderColor:'#667eea', backgroundColor:'rgba(102,126,234,0.1)', tension:0.4}] }, options: {responsive:true} });
-    if (c4 && Chart) new Chart(c4, { type: 'pie', data: { labels: ['Tipo A','Tipo B','Tipo C'], datasets: [{data: [40,35,25], backgroundColor:['#667eea','#28a745','#ffc107']}] }, options: {responsive:true} });
-    if (c5 && Chart) new Chart(c5, { type: 'bar', data: { labels: ['E','F','M','A','M','J','J','A','S','O'], datasets: [{label:'CRP', data: [5,6,7,8,9,10,9,8,7,6], backgroundColor:'#667eea'}] }, options: {responsive:true} });
-  }, 200);
+    if (document.getElementById('g1') && Chart) {
+      new Chart(document.getElementById('g1'), { 
+        type: 'bar', 
+        data: { 
+          labels: ['CRP','Giro','Pend'], 
+          datasets: [{data: [12.5,8.4,4.1], backgroundColor:['#667eea','#28a745','#ffc107']}] 
+        }, 
+        options: {responsive:true, plugins:{legend:{display:false}}} 
+      });
+    }
+    if (document.getElementById('g2') && Chart) {
+      new Chart(document.getElementById('g2'), { 
+        type: 'doughnut', 
+        data: { 
+          labels: ['Girado','Pendiente'], 
+          datasets: [{data: [67,33], backgroundColor:['#28a745','#ffc107']}] 
+        }, 
+        options: {responsive:true} 
+      });
+    }
+    if (document.getElementById('g3') && Chart) {
+      new Chart(document.getElementById('g3'), { 
+        type: 'line', 
+        data: { 
+          labels: ['M1','M2','M3','M4','M5','M6'], 
+          datasets: [{label:'Ejecución', data:[15,30,45,58,67,75], borderColor:'#667eea', backgroundColor:'rgba(102,126,234,0.1)', tension:0.4}] 
+        }, 
+        options: {responsive:true} 
+      });
+    }
+    if (document.getElementById('g4') && Chart) {
+      new Chart(document.getElementById('g4'), { 
+        type: 'pie', 
+        data: { 
+          labels: ['TipoA','TipoB','TipoC'], 
+          datasets: [{data: [40,35,25], backgroundColor:['#667eea','#28a745','#ffc107']}] 
+        }, 
+        options: {responsive:true} 
+      });
+    }
+    if (document.getElementById('g5') && Chart) {
+      new Chart(document.getElementById('g5'), { 
+        type: 'bar', 
+        data: { 
+          labels: ['E','F','M','A','M','J','J','A','S','O'], 
+          datasets: [{label:'CRP Mensual', data: [5,6,7,8,9,10,9,8,7,6], backgroundColor:'#667eea'}] 
+        }, 
+        options: {responsive:true, indexAxis:'x'} 
+      });
+    }
+  }, 100);
   
-  console.log('✅ TODO VISIBLE');
+  console.log('✅ VISIBLE');
 }
