@@ -274,71 +274,72 @@ function crearGraficas(datos) {
 }
 
 function aplicarFiltros() {
-  const q = document.getElementById('filtro-contratista').value.toLowerCase();
-  const qRef = document.getElementById('filtro-referencia').value.toLowerCase();
+  if (!DATOS_GLOBAL || DATOS_GLOBAL.filas.length === 0) return;
+
+  const q = document.getElementById('filtro-contratista').value.trim().toLowerCase();
+  const qRef = document.getElementById('filtro-referencia').value.trim().toLowerCase();
   const fechaDesde = document.getElementById('filtro-fecha-desde').value;
   const fechaHasta = document.getElementById('filtro-fecha-hasta').value;
 
-  const filtradas = DATOS_GLOBAL.filas.filter(r => {
+  // Filtrar filas
+  let filtradas = DATOS_GLOBAL.filas.filter(r => {
     const campoQ = `${r.nombre} ${r.nroId}`.toLowerCase();
-    const okQ = !q || campoQ.includes(q);
-    const okRef = !qRef || r.referencia.toLowerCase().includes(qRef);
+    const campoRef = r.referencia.toLowerCase();
+    
+    const okQ = !q || q.split(/\s+/).every(palabra => campoQ.includes(palabra));
+    const okRef = !qRef || qRef.split(/\s+/).every(palabra => campoRef.includes(palabra));
+    
     return okQ && okRef;
   });
 
+  console.log('Búsqueda:', { q, filtradas: filtradas.length });
+
+  // Mostrar ficha contratista si hay coincidencias
+  if (q && filtradas.length > 0) {
+    const primer = filtradas[0];
+    const totalContratista = filtradas.reduce((s, r) => s + r.valorBruto, 0);
+    const ultimoPago = filtradas.filter(r => r.fechaPago).map(r => r.fechaPago).sort().pop() || '—';
+    const asignaciones = [...new Set(filtradas.map(r => r.asignacion).filter(Boolean))].slice(0, 3);
+
+    document.getElementById('contratista-nombre').textContent = primer.nombre;
+    document.getElementById('contratista-nit').textContent = `NIT: ${primer.nroId}`;
+    document.getElementById('contratista-resumen').innerHTML = `
+      <div style="background:rgba(255,255,255,0.1); padding:12px; border-radius:6px; text-align:center;">
+        <div style="font-size:10px; color:rgba(255,255,255,0.6);">Total pagado</div>
+        <div style="font-size:18px; font-weight:bold; color:#5dade2;">${fmtCOP(totalContratista)}</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.1); padding:12px; border-radius:6px; text-align:center;">
+        <div style="font-size:10px; color:rgba(255,255,255,0.6);">Registros</div>
+        <div style="font-size:18px; font-weight:bold; color:#f39c12;">${fmtNum(filtradas.length)}</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.1); padding:12px; border-radius:6px; text-align:center;">
+        <div style="font-size:10px; color:rgba(255,255,255,0.6);">Último pago</div>
+        <div style="font-size:16px; font-weight:bold; color:#27ae60;">${ultimoPago}</div>
+      </div>
+    `;
+    
+    if (asignaciones.length > 0) {
+      document.getElementById('contratista-asignaciones').innerHTML = `<strong>Asignaciones:</strong> ${asignaciones.map(a => `<span style="display:inline-block; background:rgba(93,173,226,0.2); padding:4px 8px; border-radius:4px; margin:2px; font-size:10px;">${a}</span>`).join('')}`;
+    }
+
+    document.getElementById('ficha-contratista').style.display = 'block';
+  } else {
+    document.getElementById('ficha-contratista').style.display = 'none';
+  }
+
+  // Actualizar gráficas y métricas
   const datosActualizados = {
     ...DATOS_GLOBAL,
     filas: filtradas,
     totalBruto: filtradas.reduce((s, r) => s + r.valorBruto, 0),
     totalRegistros: filtradas.length,
+    proveedoresUnicos: new Set(filtradas.map(r => r.nroId)).size,
     ...procesarGraficas(filtradas, DATOS_GLOBAL.ejerciciosSet)
   };
 
   mostrarMetricas(datosActualizados);
   crearGraficas(datosActualizados);
   mostrarTabla(filtradas);
-
-  // Ficha contratista
-  if (q && filtradas.length > 0) {
-    const primerPago = filtradas[0];
-    document.getElementById('contratista-nombre').textContent = primerPago.nombre;
-    document.getElementById('contratista-nit').textContent = `NIT: ${primerPago.nroId}`;
-    const totalContratista = filtradas.reduce((s, r) => s + r.valorBruto, 0);
-    document.getElementById('contratista-resumen').innerHTML = `
-      <div style="background:rgba(255,255,255,0.1); padding:10px; border-radius:6px; text-align:center;">
-        <div style="font-size:10px; color:rgba(255,255,255,0.6);">Total pagado</div>
-        <div style="font-size:18px; font-weight:bold; color:${C.cyan};">${fmtCOP(totalContratista)}</div>
-      </div>
-      <div style="background:rgba(255,255,255,0.1); padding:10px; border-radius:6px; text-align:center;">
-        <div style="font-size:10px; color:rgba(255,255,255,0.6);">Registros</div>
-        <div style="font-size:18px; font-weight:bold; color:${C.amar};">${fmtNum(filtradas.length)}</div>
-      </div>
-    `;
-    document.getElementById('ficha-contratista').style.display = 'block';
-  } else {
-    document.getElementById('ficha-contratista').style.display = 'none';
-  }
-}
-
-function mostrarTabla(filas) {
-  let html = '<table style="width:100%; border-collapse:collapse; font-size:11px;"><thead><tr style="background:' + C.navy + '; color:white;">';
-  ['Nombre', 'NIT', 'Valor Bruto', 'Ejercicio', 'Referencia', 'Fecha Pago'].forEach(h => {
-    html += `<th style="padding:10px; text-align:left;">${h}</th>`;
-  });
-  html += '</tr></thead><tbody>';
-
-  filas.slice(0, 50).forEach((r, i) => {
-    html += `<tr style="border-bottom:1px solid ${C.border}; background:${i % 2 === 0 ? 'white' : C.bg};">
-      <td style="padding:8px;">${r.nombre}</td>
-      <td style="padding:8px; font-family:monospace;">${r.nroId}</td>
-      <td style="padding:8px; color:${C.cyan}; font-weight:bold;">${fmtCOP(r.valorBruto)}</td>
-      <td style="padding:8px;">${r.ejercicio}</td>
-      <td style="padding:8px;">${r.referencia}</td>
-      <td style="padding:8px; color:${C.verde};">${r.fechaPago || '—'}</td>
-    </tr>`;
-  });
-  html += '</tbody></table>';
-  document.getElementById('contenedor-tabla').innerHTML = html;
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -386,6 +387,10 @@ document.addEventListener('DOMContentLoaded', function() {
     reader.readAsArrayBuffer(file);
   }
 
+  // Búsqueda EN TIEMPO REAL mientras escribes
+  document.getElementById('filtro-contratista').addEventListener('input', aplicarFiltros);
+  document.getElementById('filtro-referencia').addEventListener('input', aplicarFiltros);
+  
   document.getElementById('btn-buscar').addEventListener('click', aplicarFiltros);
   document.getElementById('btn-limpiar').addEventListener('click', () => {
     document.getElementById('filtro-contratista').value = '';
