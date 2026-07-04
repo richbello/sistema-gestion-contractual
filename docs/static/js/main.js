@@ -8,7 +8,8 @@ const CONFIG_VISTAS = {
   'pac': { eyebrow: 'Módulo 03', titulo: 'Cuadre PAC' },
   'estadocuenta': { eyebrow: 'Módulo 04', titulo: 'Estado de cuenta' },
   'historico': { eyebrow: 'Módulo 05', titulo: 'Histórico de Pagos' },
-  'presupuestal': { eyebrow: 'Módulo 06', titulo: 'Análisis Presupuestal' }
+  'presupuestal': { eyebrow: 'Módulo 06', titulo: 'Análisis Presupuestal' },
+  'contratacion': { eyebrow: 'Módulo 07', titulo: 'Contratación' }
 };
 
 function cambiarVista(nombreVista) {
