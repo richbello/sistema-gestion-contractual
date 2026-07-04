@@ -63,6 +63,12 @@
         <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h18M3 6h18M3 18h18M8 3v18M16 3v18"/></svg>
         Análisis Presupuestal
       </button>
+          <button class="nav-item" data-vista="contratacion">
+        <span class="nav-numero">07</span>
+        <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 12h6M9 16h6M9 8h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
+        Contratación
+      </button>
+
     </nav>
 
     <div class="sidebar-pie">
@@ -512,6 +518,23 @@
       </div>
     </section>
 
+  
+    <section class="vista" id="vista-contratacion" hidden style="background:#f0f2f5; min-height:100vh; padding:20px;">
+      <div style="max-width:1400px; margin:0 auto;">
+        <div class="panel" style="padding:20px; background:white; border-radius:12px;">
+          <label for="carga-07" style="display:block; font-weight:600; margin-bottom:10px;">📋 Cargar Excel de Contratos</label>
+          <input type="file" id="carga-07" accept=".xlsx,.xls" style="padding:10px; border:1px solid #ddd; border-radius:8px; width:100%;" />
+        </div>
+        <div id="pantalla-carga-07" style="display:flex; justify-content:center; padding:40px;">
+          <div style="background:linear-gradient(135deg,#1a2742,#1e3a6e); border-radius:16px; padding:40px; text-align:center; color:white; max-width:550px;">
+            <div style="font-size:48px; margin-bottom:15px;">📋</div>
+            <h2 style="margin:0 0 15px; font-size:26px;">Contratación — Análisis Integral</h2>
+            <p style="font-size:13px; color:rgba(255,255,255,0.7);">Carga el consolidado de contratos. <strong style="color:#5dade2;">9 campos · filtros · 5 gráficas</strong></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
   </main>
 </div>
 
@@ -523,5 +546,6 @@
 <script src="static/js/modulo-04.js"></script>
       <script src="static/js/modulo-05.js"></script>
       <script src="static/js/modulo-06.js"></script>
+<script src="static/js/modulo-07.js"></script>
 </body>
 </html>
