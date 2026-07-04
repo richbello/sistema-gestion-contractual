@@ -1,3 +1,4 @@
+(function() {
 const C = {
   navy: "#1a2742", cyan: "#5dade2", verde: "#27ae60", amar: "#f39c12",
   rojo: "#e74c3c", muted: "#7f8c8d", bg: "#f0f2f5", border: "#e8edf2",
@@ -360,3 +361,5 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('contenedor-tabla-crp').style.display = 'block';
   });
 });
+
+})();
