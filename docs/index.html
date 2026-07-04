@@ -57,6 +57,11 @@
         <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9h18M3 15h18M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
         Histórico de Pagos
       </button>
+      <button class="nav-item" data-vista="presupuestal" style="border-left:3px solid #667eea; padding-left:15px;">
+        <span class="nav-numero">06</span>
+        <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h18M3 6h18M3 18h18M8 3v18M16 3v18"/></svg>
+        Análisis Presupuestal
+      </button>
     </nav>
 
     <div class="sidebar-pie">
@@ -455,6 +460,66 @@
 
           <!-- TABLA -->
           <div id="contenedor-tabla" style="display:none; background:white; padding:20px; border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,.06); overflow-x:auto;"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="vista" id="vista-presupuestal" hidden style="background:#f0f2f5; min-height:100vh; padding:20px;">
+      <div style="max-width:1400px; margin:0 auto;">
+        <!-- PANTALLA CARGA -->
+        <div id="pantalla-carga-crp" style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:400px;">
+          <div style="background:linear-gradient(135deg, #1a2742 0%, #1e3a6e 100%); border-radius:16px; padding:40px; text-align:center; color:white; max-width:550px;">
+            <div style="font-size:48px; margin-bottom:20px;">📊</div>
+            <h2 style="margin:0 0 15px; font-size:26px; font-weight:bold;">Análisis Presupuestal CRP</h2>
+            <p style="margin:0 0 20px; font-size:13px; color:rgba(255,255,255,0.7);">Carga el reporte SAP con <strong style="color:#5dade2;">20 variables presupuestales</strong></p>
+            <div id="drop-zone-crp" style="border:2px dashed rgba(93,173,226,0.45); border-radius:12px; padding:30px; cursor:pointer; background:rgba(93,173,226,0.07);">
+              <div style="font-size:30px; margin-bottom:10px;">📂</div>
+              <div style="font-size:13px; color:#5dade2; font-weight:600;">Arrastra o haz clic</div>
+              <div style="font-size:11px; color:rgba(255,255,255,0.3); margin-top:8px;">.xlsx</div>
+            </div>
+            <input type="file" id="file-crp" accept=".xlsx" style="display:none;">
+          </div>
+        </div>
+
+        <!-- PANTALLA PRINCIPAL -->
+        <div id="pantalla-principal-crp" style="display:none;">
+          <div style="background:linear-gradient(135deg, #1a2742 0%, #1e3a6e 100%); border-radius:12px; padding:20px; margin-bottom:20px; color:white;">
+            <h1 style="margin:0 0 8px; font-size:24px;">Análisis Presupuestal CRP</h1>
+            <div style="font-size:12px; color:rgba(255,255,255,0.6);" id="info-crp"></div>
+          </div>
+
+          <!-- KPIS -->
+          <div id="kpis-crp" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:12px; margin-bottom:20px;"></div>
+
+          <!-- FILTROS -->
+          <div style="background:white; padding:15px; border-radius:12px; margin-bottom:20px;">
+            <div style="display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:10px; margin-bottom:10px;">
+              <input type="text" id="filtro-crp-busca" placeholder="🔎 Beneficiario, compromiso, CDP, CRP..." style="padding:10px; border:1.5px solid #e8edf2; border-radius:8px; font-size:12px;">
+              <select id="filtro-crp-ej" style="padding:10px; border:1.5px solid #e8edf2; border-radius:8px; font-size:12px;"><option>Ejercicio</option></select>
+              <select id="filtro-crp-per" style="padding:10px; border:1.5px solid #e8edf2; border-radius:8px; font-size:12px;"><option>Período</option></select>
+              <select id="filtro-crp-mod" style="padding:10px; border:1.5px solid #e8edf2; border-radius:8px; font-size:12px;"><option>Modalidad</option></select>
+            </div>
+            <div style="display:flex; gap:10px;">
+              <button id="btn-filtrar-crp" style="flex:2; padding:10px; background:#667eea; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">🔍 BUSCAR</button>
+              <button id="btn-graf-crp" style="flex:1; padding:10px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer;">📈 Gráficas</button>
+              <button id="btn-tab-crp" style="flex:1; padding:10px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer;">📋 Tabla</button>
+            </div>
+          </div>
+
+          <!-- GRÁFICAS -->
+          <div id="contenedor-graficas-crp">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
+              <div style="background:white; padding:15px; border-radius:12px;"><canvas id="grafico-crp-1"></canvas></div>
+              <div style="background:white; padding:15px; border-radius:12px;"><canvas id="grafico-crp-2"></canvas></div>
+              <div style="background:white; padding:15px; border-radius:12px;"><canvas id="grafico-crp-3"></canvas></div>
+              <div style="background:white; padding:15px; border-radius:12px;"><canvas id="grafico-crp-4"></canvas></div>
+              <div style="background:white; padding:15px; border-radius:12px; grid-column:1/-1;"><canvas id="grafico-crp-5"></canvas></div>
+              <div style="background:white; padding:15px; border-radius:12px;"><canvas id="grafico-crp-6"></canvas></div>
+            </div>
+          </div>
+
+          <!-- TABLA -->
+          <div id="contenedor-tabla-crp" style="display:none; background:white; padding:15px; border-radius:12px; margin-top:15px; overflow-x:auto;"></div>
         </div>
       </div>
     </section>
