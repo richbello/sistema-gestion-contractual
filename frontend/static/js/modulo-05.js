@@ -45,21 +45,27 @@ function parseFecha(val) {
 
 function procesarExcel(raw) {
   const headers = raw[0].map(c => String(c || "").trim());
+  console.log("Encabezados encontrados:", headers);
+  
   const rows = raw.slice(1);
   
-  const iNombre = gcExacto(headers, ["nombre"]);
-  const iNroId = gc(headers, ["nº identificación", "identificacion"]);
-  const iBruto = gc(headers, ["valor bruto"]);
-  const iEj = gc(headers, ["ejercicio"]);
-  const iRef = gc(headers, ["referencia"]);
-  const iFecha = gc(headers, ["fecha de pago"]);
-  const iAsig = gc(headers, ["asignación", "asignacion"]);
-  const iAsig3 = gc(headers, ["asignación3", "asignacion3"]);
+  // Búsqueda más flexible de índices
+  const iNombre = headers.findIndex(h => h.toLowerCase().includes("nombre"));
+  const iNroId = headers.findIndex(h => h.toLowerCase().includes("identificación") || h.toLowerCase().includes("nit"));
+  const iBruto = headers.findIndex(h => h.toLowerCase().includes("valor bruto") || h.toLowerCase().includes("valor"));
+  const iEj = headers.findIndex(h => h.toLowerCase().includes("ejercicio"));
+  const iRef = headers.findIndex(h => h.toLowerCase().includes("referencia"));
+  const iFecha = headers.findIndex(h => h.toLowerCase().includes("fecha de pago") || h.toLowerCase().includes("fecha pago"));
+  const iAsig = headers.findIndex(h => h.toLowerCase().includes("asignación") || h.toLowerCase().includes("asignacion"));
+
+  console.log("Índices:", {iNombre, iNroId, iBruto, iEj, iRef, iFecha, iAsig});
 
   const filas = [];
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     const bruto = Number(row[iBruto]) || 0;
     if (bruto <= 0) continue;
+    
     filas.push({
       nombre: String(row[iNombre] || "").trim(),
       nroId: String(row[iNroId] || "").trim(),
@@ -68,17 +74,22 @@ function procesarExcel(raw) {
       referencia: String(row[iRef] || "").trim(),
       fechaPago: parseFecha(row[iFecha]),
       asignacion: String(row[iAsig] || "").trim(),
-      asignacion3: String(row[iAsig3] || "").trim()
+      asignacion3: ""
     });
   }
+
+  console.log("Filas procesadas:", filas.length);
 
   const ejerciciosSet = [...new Set(filas.map(r => r.ejercicio))].filter(Boolean).sort();
   const totalBruto = filas.reduce((s, r) => s + r.valorBruto, 0);
   const totalRegistros = filas.length;
   const proveedoresUnicos = new Set(filas.map(r => r.nroId)).size;
 
+  console.log({totalBruto, totalRegistros, proveedoresUnicos, ejerciciosSet});
+
   return { filas, ejerciciosSet, totalBruto, totalRegistros, proveedoresUnicos };
 }
+
 
 function procesarGraficas(filas, ejerciciosSet) {
   // G1: Combo por ejercicio
