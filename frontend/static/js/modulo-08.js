@@ -110,7 +110,7 @@
             <div style="font-size:52px;margin-bottom:8px;">🔐</div>
             <div style="font-size:10px;color:${C.cyan};letter-spacing:4px;font-weight:700;text-transform:uppercase;">Control Político · XBOG Technologies</div>
             <h1 style="color:${C.navy};font-size:24px;font-weight:900;margin:8px 0 4px;">Acceso Seguro</h1>
-            <div style="color:${C.muted};font-size:12px;">FDL Usme · Sistema de Auditoría</div>
+            <div style="color:${C.muted};font-size:12px;">Fondo de Desarrollo Local - Sistema de Auditoría</div>
           </div>
           <div style="background:#fff;border-radius:16px;padding:32px;box-shadow:0 12px 32px rgba(26,39,66,.15);">
             <div style="margin-bottom:18px;">
