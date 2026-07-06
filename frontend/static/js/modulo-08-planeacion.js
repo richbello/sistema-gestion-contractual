@@ -18,20 +18,37 @@
   }
   
   function leerExcel(archivo) {
-    if (!archivo) return;
+    if (!archivo) { alert("No se seleccionó archivo"); return; }
+    
+    console.log("📱 Archivo: " + archivo.name + " (" + archivo.size + " bytes)");
+    
+    if (typeof XLSX === "undefined") {
+      alert("Error: Librería XLSX no cargada. Recarga la página.");
+      return;
+    }
+    
     const reader = new FileReader();
     reader.onload = function(evt) {
       try {
+        console.log("📖 Leyendo Excel...");
         const wb = XLSX.read(evt.target.result, { type: "array" });
+        console.log("📋 Hojas encontradas: " + wb.SheetNames.join(", "));
+        
+        if (!wb.Sheets["EJECUCIONES"]) {
+          alert("Error: El archivo no tiene la hoja EJECUCIONES.\nHojas encontradas: " + wb.SheetNames.join(", "));
+          return;
+        }
+        
         const ws = wb.Sheets["EJECUCIONES"];
         const ejRaw = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        console.log("📊 Filas leídas: " + ejRaw.length);
         
         PROYECTOS = [];
         let poaiTotal = 0;
         
         for (let i = 2; i < ejRaw.length; i++) {
           const row = ejRaw[i];
-          if (!row || row.length < 8) continue;
+          if (!row || row.length < 5) continue;
           
           const codigo = String(row[2] || "").trim();
           const poai = parseFloat(String(row[1] || 0).replace(/[^0-9.-]/g, "")) || 0;
@@ -55,6 +72,8 @@
           }
         }
         
+        console.log("✅ Proyectos válidos: " + PROYECTOS.length);
+        
         const totalAprop = PROYECTOS.reduce((s, p) => s + p.apropiaciones, 0);
         if (poaiTotal > 0 && totalAprop > 0) {
           PROYECTOS.forEach(p => { p.poai = (p.apropiaciones / totalAprop) * poaiTotal; });
@@ -71,12 +90,21 @@
           giros: PROYECTOS.reduce((s, p) => s + p.giros, 0)
         };
         
-        console.log("✅ " + PROYECTOS.length + " proyectos cargados");
-        
         fileName = archivo.name;
-        if (PROYECTOS.length === 0) { alert("Sin datos"); return; }
+        
+        if (PROYECTOS.length === 0) {
+          alert("Sin datos válidos.\nFilas leídas: " + ejRaw.length + "\n\nVerifica que el Excel tenga:\n- Hoja EJECUCIONES\n- Columna Código_Proyecto (col C)\n- Columna Apropiaciones (col D)");
+          return;
+        }
+        
         render(archivo.name);
-      } catch (err) { console.error(err); alert("Error: " + err.message); }
+      } catch (err) {
+        console.error("ERROR:", err);
+        alert("Error al leer Excel: " + err.message + "\n\nIntenta desde desktop o verifica el archivo.");
+      }
+    };
+    reader.onerror = function() {
+      alert("Error al leer el archivo. Puede estar corrupto.");
     };
     reader.readAsArrayBuffer(archivo);
   }
@@ -100,7 +128,6 @@
     if (previo) previo.remove();
     
     PROYECTO_ACTIVO = null;
-    actualizarKPIs();
     
     const dash = document.createElement("div");
     dash.id = "dash-08";
@@ -110,7 +137,7 @@
       <div style="background:#fff;padding:20px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:20px;">
         <label style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;color:#1a2742;margin-bottom:12px;">📋 Seleccionar Proyecto (${PROYECTOS.length} disponibles)</label>
         <select id="c08-select" style="width:100%;padding:14px;border:2px solid #667eea;border-radius:8px;font-size:14px;color:#1a2742;font-weight:600;background:#fff;">
-          <option value="">-- Ver todos los proyectos (Dashboard General) --</option>
+          <option value="">-- Ver todos los proyectos --</option>
         </select>
       </div>
       <div id="c08-detalle-wrap" style="background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:15px;"></div>
@@ -135,17 +162,11 @@
     });
     
     select.addEventListener("change", function() {
-      if (this.value) {
-        PROYECTO_ACTIVO = PROYECTOS.find(p => p.codigo == this.value);
-        mostrarDetalle(PROYECTO_ACTIVO);
-        actualizarKPIs();
-        actualizarGraficas();
-      } else {
-        PROYECTO_ACTIVO = null;
-        document.getElementById("c08-detalle-wrap").innerHTML = "";
-        actualizarKPIs();
-        actualizarGraficas();
-      }
+      PROYECTO_ACTIVO = this.value ? PROYECTOS.find(p => p.codigo == this.value) : null;
+      if (PROYECTO_ACTIVO) mostrarDetalle(PROYECTO_ACTIVO);
+      else document.getElementById("c08-detalle-wrap").innerHTML = "";
+      actualizarKPIs();
+      actualizarGraficas();
     });
     
     setTimeout(() => { actualizarKPIs(); actualizarGraficas(); }, 300);
@@ -155,9 +176,7 @@
     const header = document.getElementById("c08-header");
     const kpis = document.getElementById("c08-kpis");
     if (!header || !kpis) return;
-    
     const p = PROYECTO_ACTIVO;
-    const datos = p ? p : TOTALS;
     const titulo = p ? "Proyecto " + p.codigo : "Planeación PDL 2026";
     const subt = p ? "Vista individual" : PROYECTOS.length + " proyectos activos";
     const poai = p ? p.poai : TOTALS.poai;
