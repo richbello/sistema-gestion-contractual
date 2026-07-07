@@ -74,3 +74,17 @@
 #vista-plantilla .metrica-card.acento-rojo,
 #vista-pac .metrica-card.acento-rojo,
 #vista-estadocuenta .metrica-card.acento-rojo { border-left-color: #e74c3c; }
+
+/* ===== Fix: limitar altura de gráficas Chart.js en todos los módulos ===== */
+canvas[id^="c07-"],
+canvas[id^="c06-"],
+canvas[id^="pl-"],
+canvas[id^="grafico-crp-"],
+#dash-06 canvas,
+#dash-07 canvas,
+#plan-root canvas,
+.vista canvas {
+  max-height: 320px !important;
+  height: 320px !important;
+  width: 100% !important;
+}
