@@ -2,6 +2,12 @@
 Módulo 1 — Extracción de causaciones desde PDFs.
 Versión actualizada: detecta retenciones adicionales (HONOR_BASE/HONOR_VALOR)
 además del ReteICA, para que el Módulo 02 genere filas extra con código 44.
+
+Refactor: la lógica se divide en dos etapas para permitir procesamiento por lotes
+(evita agotar la memoria del free tier de Render con entregas grandes):
+  1) extraer_pdfs(rutas)       -> lee los PDFs y devuelve la lista de registros crudos.
+  2) consolidar(registros, ...) -> cruza con BASEGEN, ordena y genera el Excel final.
+La función ejecutar_extraccion() se conserva como wrapper para compatibilidad.
 """
 import os
 import re
@@ -44,6 +50,14 @@ COL_ORDEN_FINAL = [
     'PERIODO', 'DEL', 'AL', 'PAGO No.',
     'HONOR_BASE', 'HONOR_VALOR',
     'Código Bco', 'Tipo Cta', 'No Cuenta', 'CRP', 'SALDO CRP'
+]
+
+COL_ORDEN_BASE = [
+    'Contrato', 'Documento No.', 'Contratista', 'NIT_CC',
+    'Valor Bruto', 'BASE RETEICA', 'Valor Reteica',
+    'TOTAL DESCUENTOS', 'Neto a Pagar',
+    'PERIODO', 'DEL', 'AL', 'PAGO No.',
+    'HONOR_BASE', 'HONOR_VALOR',
 ]
 
 # ── Funciones auxiliares ──────────────────────────────────────────────────────
@@ -226,11 +240,13 @@ def _procesar_safe(pdf_path):
         return None, f"{os.path.basename(pdf_path)}: {e}"
 
 
-# ── Función principal exportada ───────────────────────────────────────────────
-def ejecutar_extraccion(ruta_base_excel, rutas_pdfs, ruta_salida_excel, max_workers=8):
+# ── ETAPA 1: extracción de PDFs (troceable) ──────────────────────────────────
+def extraer_pdfs(rutas_pdfs, max_workers=8):
+    """Lee un conjunto de PDFs y devuelve (registros, errores).
+    Esta es la parte pesada en memoria: se llama por lotes desde el frontend.
+    No cruza con BASEGEN ni escribe Excel."""
     resultados = []
     errores    = []
-    total      = len(rutas_pdfs)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futuros = {executor.submit(_procesar_safe, p): p for p in rutas_pdfs}
@@ -241,21 +257,25 @@ def ejecutar_extraccion(ruta_base_excel, rutas_pdfs, ruta_salida_excel, max_work
             if err:
                 errores.append(err)
 
+    return resultados, errores
+
+
+# ── ETAPA 2: consolidación final (una sola vez) ──────────────────────────────
+def consolidar(resultados, ruta_base_excel, ruta_salida_excel, total_pdfs=None, errores=None):
+    """Toma los registros crudos ya extraídos (de uno o varios lotes),
+    cruza con BASEGEN, ordena por contrato y genera el Excel final."""
+    errores = errores or []
+    if total_pdfs is None:
+        total_pdfs = len(resultados)
+
     if not resultados:
         return {"ok": False, "mensaje": "No se extrajo ningún dato de los PDFs.", "errores": errores}
 
-    col_orden_base = [
-        'Contrato', 'Documento No.', 'Contratista', 'NIT_CC',
-        'Valor Bruto', 'BASE RETEICA', 'Valor Reteica',
-        'TOTAL DESCUENTOS', 'Neto a Pagar',
-        'PERIODO', 'DEL', 'AL', 'PAGO No.',
-        'HONOR_BASE', 'HONOR_VALOR',
-    ]
     df_out = pd.DataFrame(resultados)
-    for col in col_orden_base:
+    for col in COL_ORDEN_BASE:
         if col not in df_out.columns:
             df_out[col] = ""
-    df_out = df_out[col_orden_base].copy()
+    df_out = df_out[COL_ORDEN_BASE].copy()
 
     df_out['NIT_CC'] = (
         pd.to_numeric(
@@ -328,7 +348,7 @@ def ejecutar_extraccion(ruta_base_excel, rutas_pdfs, ruta_salida_excel, max_work
 
     return {
         "ok"                  : True,
-        "total_pdfs"          : total,
+        "total_pdfs"          : total_pdfs,
         "procesados"          : len(resultados),
         "errores"             : errores,
         "nits_duplicados_base": int(len(duplicados)),
@@ -336,3 +356,12 @@ def ejecutar_extraccion(ruta_base_excel, rutas_pdfs, ruta_salida_excel, max_work
         "con_retencion_44"    : int(con_honor),
         "archivo_salida"      : ruta_salida_excel,
     }
+
+
+# ── Función principal exportada (wrapper de compatibilidad) ──────────────────
+def ejecutar_extraccion(ruta_base_excel, rutas_pdfs, ruta_salida_excel, max_workers=8):
+    """Wrapper que conserva el comportamiento original: extrae todos los PDFs
+    de una vez y consolida. Se usa cuando el lote es pequeño."""
+    resultados, errores = extraer_pdfs(rutas_pdfs, max_workers=max_workers)
+    return consolidar(resultados, ruta_base_excel, ruta_salida_excel,
+                      total_pdfs=len(rutas_pdfs), errores=errores)
