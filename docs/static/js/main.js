@@ -163,6 +163,79 @@ function formatearMoneda(valor) {
   return n.toLocaleString("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
 }
 /* ---------------------------- Módulo 01: Extracción ---------------------------- */
+/* Con entregas grandes, el free tier de Render se queda sin memoria si recibe
+   todos los PDFs en una sola petición. Por eso, cuando hay muchos PDFs, se
+   trocean en lotes pequeños (LOTE_PDFS) que se procesan uno por uno; los
+   registros se acumulan y el Excel final se genera de una sola vez al final. */
+
+const LOTE_PDFS = 8;          // tamaño de lote seguro para el free tier
+const UMBRAL_TROCEO = 10;     // hasta este número, se usa el flujo clásico
+
+function _actualizarProgresoExtraccion(hechos, total) {
+  const el = document.getElementById("estado-extraccion");
+  if (!el) return;
+  const txt = el.querySelector(".estado-texto") || el;
+  txt.textContent = `Procesando lote ${hechos} de ${total}…`;
+}
+
+async function _extraerPorLotes(basegen, pdfsArray) {
+  const totalPdfs = pdfsArray.length;
+  const lotes = [];
+  for (let i = 0; i < totalPdfs; i += LOTE_PDFS) {
+    lotes.push(pdfsArray.slice(i, i + LOTE_PDFS));
+  }
+
+  let registros = [];
+  let errores = [];
+
+  for (let idx = 0; idx < lotes.length; idx++) {
+    _actualizarProgresoExtraccion(idx + 1, lotes.length);
+    const fd = new FormData();
+    for (const f of lotes[idx]) fd.append("pdfs", f);
+
+    const resp = await fetch(`${API_BASE}/api/extraccion/extraer-lote`, {
+      method: "POST",
+      body: fd,
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.mensaje || `Falló el lote ${idx + 1} de ${lotes.length}.`);
+    }
+    registros = registros.concat(data.registros || []);
+    if (data.errores && data.errores.length) errores = errores.concat(data.errores);
+  }
+
+  // Consolidación final: cruce con BASEGEN + orden + Excel.
+  _actualizarProgresoExtraccion(lotes.length, lotes.length);
+  const fdFinal = new FormData();
+  fdFinal.append("basegen", basegen);
+  fdFinal.append("registros", JSON.stringify(registros));
+  fdFinal.append("total_pdfs", String(totalPdfs));
+  fdFinal.append("errores", JSON.stringify(errores));
+
+  const respFinal = await fetch(`${API_BASE}/api/extraccion/consolidar`, {
+    method: "POST",
+    body: fdFinal,
+  });
+  const dataFinal = await respFinal.json();
+  if (!respFinal.ok || !dataFinal.ok) {
+    throw new Error(dataFinal.mensaje || "No se pudo consolidar el Excel final.");
+  }
+  return dataFinal;
+}
+
+async function _extraerDirecto(basegen, pdfs) {
+  const fd = new FormData();
+  fd.append("basegen", basegen);
+  for (const f of pdfs) fd.append("pdfs", f);
+  const resp = await fetch(`${API_BASE}/api/extraccion/procesar`, { method: "POST", body: fd });
+  const data = await resp.json();
+  if (!resp.ok || !data.ok) {
+    throw new Error(data.mensaje || "No se pudo completar la extracción.");
+  }
+  return data;
+}
+
 document.getElementById("form-extraccion").addEventListener("submit", async (e) => {
   e.preventDefault();
   mostrarAlerta("alerta-extraccion", "");
@@ -173,19 +246,15 @@ document.getElementById("form-extraccion").addEventListener("submit", async (e) 
     mostrarAlerta("alerta-extraccion", "Debes adjuntar el archivo BASEGEN y al menos un PDF.");
     return;
   }
-  const fd = new FormData();
-  fd.append("basegen", basegen);
-  for (const f of pdfs) fd.append("pdfs", f);
   const btn = document.getElementById("btn-extraccion");
   btn.disabled = true;
   mostrarEstado("estado-extraccion", true);
   try {
-    const resp = await fetch(`${API_BASE}/api/extraccion/procesar`, { method: "POST", body: fd });
-    const data = await resp.json();
-    if (!resp.ok || !data.ok) {
-      mostrarAlerta("alerta-extraccion", data.mensaje || "No se pudo completar la extracción.");
-      return;
-    }
+    const pdfsArray = Array.from(pdfs);
+    const data = pdfsArray.length > UMBRAL_TROCEO
+      ? await _extraerPorLotes(basegen, pdfsArray)
+      : await _extraerDirecto(basegen, pdfs);
+
     const cont = document.getElementById("metricas-extraccion");
     cont.innerHTML = "";
     cont.appendChild(crearMetrica(data.total_pdfs, "PDFs recibidos"));
@@ -198,7 +267,7 @@ document.getElementById("form-extraccion").addEventListener("submit", async (e) 
     document.getElementById("link-descarga-extraccion").href = API_BASE + data.descarga;
     document.getElementById("resultados-extraccion").classList.add("visible");
   } catch (err) {
-    mostrarAlerta("alerta-extraccion", "Error de conexión con el servidor. Verifica que el backend esté en ejecución.");
+    mostrarAlerta("alerta-extraccion", err.message || "Error de conexión con el servidor. Verifica que el backend esté en ejecución.");
   } finally {
     btn.disabled = false;
     mostrarEstado("estado-extraccion", false);
