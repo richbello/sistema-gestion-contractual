@@ -24,3 +24,7 @@ backend/outputs/*
 
 # Logs
 *.log
+
+# Datos fuente locales (no versionar)
+backend/cuentas.xlsx
+backend/importar_cuentas.py
