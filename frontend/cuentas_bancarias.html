@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cuentas bancarias · Sistema de Gestión Contractual</title>
+<style>
+  :root{
+    --bg:#EEF1F4; --surface:#FFFFFF; --ink:#17212B; --muted:#5A6A78;
+    --line:#DCE2E8; --line-soft:#E9EDF1;
+    --accent:#12657E; --accent-ink:#0C4A5E; --accent-soft:#E4F0F3;
+    --ok:#1F7A4D; --ok-soft:#E3F2E9; --danger:#B23A2F; --danger-soft:#F7E6E4;
+    --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --data:ui-monospace,"SF Mono","Cascadia Code",Consolas,"Liberation Mono",monospace;
+    --radius:10px; --shadow:0 1px 2px rgba(23,33,43,.06),0 8px 24px rgba(23,33,43,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);
+    font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased}
+  header{background:var(--ink);color:#EAF0F4;padding:18px 22px;
+    display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  header .brand{display:flex;flex-direction:column;gap:2px}
+  header h1{margin:0;font-size:19px;font-weight:650;letter-spacing:-.01em}
+  header .sub{font-size:12px;color:#93A6B3;letter-spacing:.02em}
+  .pill{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);
+    color:#EAF0F4;padding:6px 12px;border-radius:999px;font-size:13px;white-space:nowrap}
+  .pill b{font-family:var(--data);font-weight:600}
+  main{max-width:1040px;margin:0 auto;padding:22px 20px 80px}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+  .search{position:relative;flex:1;min-width:220px}
+  .search input{width:100%;padding:11px 14px 11px 38px;border:1px solid var(--line);
+    border-radius:var(--radius);background:var(--surface);font-size:15px;font-family:var(--ui)}
+  .search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);
+    width:16px;height:16px;stroke:var(--muted)}
+  .search input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+  button{font-family:var(--ui);font-size:14px;cursor:pointer;border-radius:var(--radius);
+    border:1px solid transparent;padding:10px 15px;font-weight:550;transition:background .12s,border-color .12s}
+  .btn-primary{background:var(--accent);color:#fff}
+  .btn-primary:hover{background:var(--accent-ink)}
+  .btn-ghost{background:var(--surface);color:var(--ink);border-color:var(--line)}
+  .btn-ghost:hover{border-color:var(--muted)}
+  button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .config{margin-bottom:14px}
+  .config summary{cursor:pointer;color:var(--muted);font-size:13px;list-style:none;
+    display:inline-flex;align-items:center;gap:6px}
+  .config summary::-webkit-details-marker{display:none}
+  .config .row{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+  .config input{padding:8px 11px;border:1px solid var(--line);border-radius:8px;
+    font-family:var(--data);font-size:13px;min-width:340px;flex:1}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);overflow:hidden}
+  .meta-row{display:flex;justify-content:space-between;align-items:center;
+    padding:12px 16px;border-bottom:1px solid var(--line-soft);color:var(--muted);font-size:13px}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:11px 16px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+    font-weight:650;background:#F7F9FA;position:sticky;top:0}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:#F9FBFC}
+  .mono{font-family:var(--data);font-size:14px;letter-spacing:.01em}
+  .name{font-weight:550}
+  .tag{display:inline-block;font-size:12px;color:var(--muted)}
+  .actions{display:flex;gap:4px;justify-content:flex-end}
+  .link{background:none;border:none;padding:6px 9px;font-size:13px;font-weight:600;border-radius:7px}
+  .link.edit{color:var(--accent)}
+  .link.edit:hover{background:var(--accent-soft)}
+  .link.del{color:var(--danger)}
+  .link.del:hover{background:var(--danger-soft)}
+  td.right,th.right{text-align:right}
+  .empty{padding:48px 24px;text-align:center;color:var(--muted)}
+  .empty b{color:var(--ink);display:block;margin-bottom:6px;font-size:16px}
+  .overlay{position:fixed;inset:0;background:rgba(23,33,43,.42);display:none;
+    align-items:center;justify-content:center;padding:20px;z-index:50}
+  .overlay.open{display:flex}
+  .modal{background:var(--surface);border-radius:14px;width:100%;max-width:440px;
+    box-shadow:0 20px 60px rgba(23,33,43,.3);overflow:hidden}
+  .modal h2{margin:0;padding:18px 20px;font-size:16px;border-bottom:1px solid var(--line-soft)}
+  .modal .body{padding:18px 20px;display:flex;flex-direction:column;gap:14px}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .field input,.field select{padding:10px 12px;border:1px solid var(--line);border-radius:8px;
+    font-size:15px;font-family:var(--ui)}
+  .field input.mono{font-family:var(--data)}
+  .field input:focus,.field select:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+  .hint{font-size:12px;color:var(--muted)}
+  .modal .foot{padding:14px 20px;display:flex;justify-content:flex-end;gap:10px;
+    border-top:1px solid var(--line-soft);background:#FAFBFC}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .danger-note{background:var(--danger-soft);color:#7d2820;padding:11px 13px;border-radius:8px;font-size:14px}
+  .danger-note b{font-family:var(--data)}
+  #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);
+    background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;font-size:14px;
+    box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:60;max-width:90vw}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast.ok{background:var(--ok)} #toast.err{background:var(--danger)}
+  @media (max-width:620px){ th.hide-sm,td.hide-sm{display:none} }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>Cuentas bancarias</h1>
+    <span class="sub">Sistema de Gestión Contractual · XBOG Technologies</span>
+  </div>
+  <span class="pill">Registradas: <b id="total">—</b></span>
+</header>
+<main>
+  <details class="config">
+    <summary>⚙ Servidor</summary>
+    <div class="row">
+      <input id="apiBase" spellcheck="false">
+      <button class="btn-ghost" id="btnApply">Aplicar y recargar</button>
+    </div>
+  </details>
+  <div class="toolbar">
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="q" type="search" placeholder="Buscar por cédula/NIT o nombre…" autocomplete="off">
+    </div>
+    <button class="btn-primary" id="btnAdd">+ Agregar cuenta</button>
+    <button class="btn-ghost" id="btnExport">Exportar JSON</button>
+  </div>
+  <div class="card">
+    <div class="meta-row">
+      <span id="count">Cargando…</span>
+      <span id="status"></span>
+    </div>
+    <div id="tableWrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Cédula / NIT</th>
+            <th>Beneficiario</th>
+            <th class="hide-sm">Tipo</th>
+            <th>Banco</th>
+            <th>Cuenta</th>
+            <th class="right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="empty" style="display:none"></div>
+    </div>
+  </div>
+</main>
+<div class="overlay" id="formOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="formTitle">
+    <h2 id="formTitle">Agregar cuenta</h2>
+    <div class="body">
+      <div class="field">
+        <label for="fCedula">Cédula / NIT</label>
+        <input id="fCedula" class="mono" inputmode="numeric" autocomplete="off">
+        <span class="hint" id="cedulaHint"></span>
+      </div>
+      <div class="field">
+        <label for="fNombre">Nombre del beneficiario</label>
+        <input id="fNombre" autocomplete="off">
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label for="fTipo">Tipo de cuenta</label>
+          <select id="fTipo">
+            <option value="02">02 · Ahorros</option>
+            <option value="01">01 · Corriente</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="fBanco">Código de banco</label>
+          <input id="fBanco" class="mono" inputmode="numeric" maxlength="4" autocomplete="off">
+        </div>
+      </div>
+      <div class="field">
+        <label for="fCuenta">Número de cuenta</label>
+        <input id="fCuenta" class="mono" inputmode="numeric" autocomplete="off">
+        <span class="hint">Se conservan los ceros a la izquierda.</span>
+      </div>
+    </div>
+    <div class="foot">
+      <button class="btn-ghost" data-close>Cancelar</button>
+      <button class="btn-primary" id="btnSave">Guardar</button>
+    </div>
+  </div>
+</div>
+<div class="overlay" id="delOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="delTitle" style="max-width:420px">
+    <h2 id="delTitle">Eliminar cuenta</h2>
+    <div class="body">
+      <div class="danger-note" id="delNote"></div>
+      <span class="hint">Esta acción quita el registro del JSON. Podrás volver a agregarlo, pero no se deshace solo.</span>
+    </div>
+    <div class="foot">
+      <button class="btn-ghost" data-close>Cancelar</button>
+      <button class="btn-primary" id="btnDelConfirm" style="background:var(--danger)">Eliminar</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+<script>
+let API_BASE = "https://sistema-gestion-contractual.onrender.com/api/cuentas-bancarias";
+if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+  API_BASE = "http://localhost:5000/api/cuentas-bancarias";
+}
+const $ = s => document.querySelector(s);
+let DATA = [];
+let editKey = null;
+let delKey  = null;
+const TIPO = {"01":"Corriente","02":"Ahorros"};
+function toast(msg, kind){
+  const t = $("#toast"); t.textContent = msg;
+  t.className = "show " + (kind||"");
+  setTimeout(()=>{ t.className = t.className.replace("show","").trim(); }, 2600);
+}
+async function api(path, opts){
+  const res = await fetch(API_BASE + path, opts);
+  const data = await res.json().catch(()=>({ok:false,mensaje:"Respuesta no válida"}));
+  return {status:res.status, data};
+}
+function esc(s){ return String(s??"").replace(/[&<>"]/g, c => (
+  {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function render(){
+  const raw = $("#q").value.trim();
+  const qDig = raw.replace(/\D/g,"");
+  const qUp = raw.toUpperCase();
+  const filtered = !raw ? DATA : DATA.filter(r =>
+    (qDig && r.cedula.includes(qDig)) || r.nombre.toUpperCase().includes(qUp));
+  const rows = $("#rows"), empty = $("#empty");
+  rows.innerHTML = "";
+  if (!DATA.length){
+    empty.style.display="block";
+    empty.innerHTML="<b>Aún no hay cuentas cargadas.</b>Genera el JSON con el importador y colócalo en <code>data/cuentas_bancarias.json</code>, o agrega la primera aquí.";
+    $("#count").textContent = "0 cuentas";
+    return;
+  }
+  if (!filtered.length){
+    empty.style.display="block";
+    empty.innerHTML="<b>Sin resultados.</b>No hay coincidencias para “"+esc(raw)+"”.";
+  } else { empty.style.display="none"; }
+  const frag = document.createDocumentFragment();
+  filtered.forEach(r=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      '<td class="mono">'+esc(r.cedula)+'</td>'+
+      '<td class="name">'+esc(r.nombre)+'</td>'+
+      '<td class="hide-sm"><span class="tag">'+esc(r.tipo_cuenta)+' · '+(TIPO[r.tipo_cuenta]||"")+'</span></td>'+
+      '<td class="mono">'+esc(r.codigo_banco)+'</td>'+
+      '<td class="mono">'+esc(r.numero_cuenta)+'</td>'+
+      '<td class="right"><div class="actions">'+
+        '<button class="link edit" data-edit="'+esc(r.cedula)+'">Editar</button>'+
+        '<button class="link del" data-del="'+esc(r.cedula)+'">Eliminar</button>'+
+      '</div></td>';
+    frag.appendChild(tr);
+  });
+  rows.appendChild(frag);
+  $("#count").textContent = filtered.length === DATA.length
+    ? DATA.length + " cuentas"
+    : filtered.length + " de " + DATA.length + " cuentas";
+}
+async function load(){
+  $("#status").textContent = "Conectando… (si el servidor estaba dormido puede tardar ~30 s)";
+  try{
+    const {data} = await api("/listar");
+    if(!data.ok) throw new Error(data.mensaje||"Error");
+    DATA = data.cuentas || [];
+    $("#total").textContent = DATA.length;
+    $("#status").textContent = "";
+    render();
+  }catch(e){
+    $("#status").textContent = "";
+    $("#count").textContent = "";
+    $("#empty").style.display="block";
+    $("#empty").innerHTML="<b>No pude conectar con el servidor.</b>Verifica la URL en ⚙ Servidor y que el backend esté activo.";
+    toast("Sin conexión con la API", "err");
+  }
+}
+function openForm(reg){
+  editKey = reg ? reg.cedula : null;
+  $("#formTitle").textContent = reg ? "Modificar cuenta" : "Agregar cuenta";
+  $("#fCedula").value = reg ? reg.cedula : "";
+  $("#fNombre").value = reg ? reg.nombre : "";
+  $("#fTipo").value   = reg ? reg.tipo_cuenta : "02";
+  $("#fBanco").value  = reg ? reg.codigo_banco : "";
+  $("#fCuenta").value = reg ? reg.numero_cuenta : "";
+  $("#cedulaHint").textContent = reg ? "Puedes corregir la cédula; se reasigna el registro." : "";
+  $("#formOverlay").classList.add("open");
+  setTimeout(()=>$("#fCedula").focus(),50);
+}
+function closeForm(){ $("#formOverlay").classList.remove("open"); }
+async function save(){
+  const cedula = $("#fCedula").value.trim();
+  const nombre = $("#fNombre").value.trim();
+  const cuenta = $("#fCuenta").value.trim();
+  if(!cedula || !nombre || !cuenta){ toast("Cédula, nombre y cuenta son obligatorios","err"); return; }
+  const payload = {
+    nombre, tipo_cuenta:$("#fTipo").value,
+    codigo_banco:$("#fBanco").value.trim(), numero_cuenta:cuenta
+  };
+  $("#btnSave").disabled = true;
+  try{
+    let r;
+    if(editKey){
+      payload.cedula = editKey;
+      if(cedula.replace(/\D/g,"") !== editKey) payload.nueva_cedula = cedula;
+      r = await api("/editar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    }else{
+      payload.cedula = cedula; payload.sobreescribir = true;
+      r = await api("/agregar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    }
+    if(!r.data.ok){ toast(r.data.mensaje||"No se pudo guardar","err"); return; }
+    toast(r.data.mensaje||"Guardado","ok");
+    closeForm(); await load();
+  }catch(e){ toast("Error de red","err"); }
+  finally{ $("#btnSave").disabled = false; }
+}
+function openDelete(reg){
+  delKey = reg.cedula;
+  $("#delNote").innerHTML = "Vas a eliminar a <b>"+esc(reg.nombre)+"</b> (cédula "+esc(reg.cedula)+", cuenta "+esc(reg.numero_cuenta)+").";
+  $("#delOverlay").classList.add("open");
+}
+function closeDelete(){ $("#delOverlay").classList.remove("open"); }
+async function confirmDelete(){
+  if(!delKey) return;
+  $("#btnDelConfirm").disabled = true;
+  try{
+    const r = await api("/eliminar/"+encodeURIComponent(delKey),{method:"POST"});
+    if(!r.data.ok){ toast(r.data.mensaje||"No se pudo eliminar","err"); return; }
+    toast("Cuenta eliminada","ok");
+    closeDelete(); await load();
+  }catch(e){ toast("Error de red","err"); }
+  finally{ $("#btnDelConfirm").disabled = false; }
+}
+$("#q").addEventListener("input", render);
+$("#btnAdd").addEventListener("click", ()=>openForm(null));
+$("#btnSave").addEventListener("click", save);
+$("#btnDelConfirm").addEventListener("click", confirmDelete);
+$("#btnExport").addEventListener("click", ()=>{ window.location = API_BASE + "/exportar"; });
+$("#btnApply").addEventListener("click", ()=>{ API_BASE = $("#apiBase").value.trim(); load(); });
+document.querySelectorAll("[data-close]").forEach(b=>b.addEventListener("click", ()=>{ closeForm(); closeDelete(); }));
+document.querySelectorAll(".overlay").forEach(o=>o.addEventListener("click", e=>{ if(e.target===o){ closeForm(); closeDelete(); } }));
+document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ closeForm(); closeDelete(); } });
+$("#rows").addEventListener("click", e=>{
+  const ed = e.target.closest("[data-edit]");
+  const dl = e.target.closest("[data-del]");
+  if(ed){ const r = DATA.find(x=>x.cedula===ed.dataset.edit); if(r) openForm(r); }
+  if(dl){ const r = DATA.find(x=>x.cedula===dl.dataset.del); if(r) openDelete(r); }
+});
+$("#apiBase").value = API_BASE;
+load();
+</script>
+</body>
+</html>
