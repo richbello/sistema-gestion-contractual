@@ -13,6 +13,7 @@ const MODULOS = {
   planeacion:    { eyebrow: "Módulo 08", titulo: "Planeación PDL" },
   ciberseguridad:{ eyebrow: "Módulo 09", titulo: "Ciberseguridad" },
   licencias:     { eyebrow: "Módulo 10", titulo: "Licencias" },
+  validacion:    { eyebrow: "Módulo 11", titulo: "Validación de plantilla" },
 };
 /* ---------------------------- Navegación ---------------------------- */
 function cambiarVista(idVista) {
@@ -385,5 +386,76 @@ document.getElementById("form-pac").addEventListener("submit", async (e) => {
   } finally {
     btn.disabled = false;
     mostrarEstado("estado-pac", false);
+  }
+});
+
+/* ---------------------------- Módulo 11: Validación de plantilla ---------------------------- */
+configurarDropzoneUnico("drop-validacion", "input-validacion", "lista-validacion");
+
+document.getElementById("form-validacion").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  mostrarAlerta("alerta-validacion", "");
+  document.getElementById("resultados-validacion").classList.remove("visible");
+  const archivo = document.getElementById("input-validacion").files[0];
+  if (!archivo) {
+    mostrarAlerta("alerta-validacion", "Debes adjuntar la plantilla a validar.");
+    return;
+  }
+  const fd = new FormData();
+  fd.append("plantilla", archivo);
+  const btn = document.getElementById("btn-validacion");
+  btn.disabled = true;
+  mostrarEstado("estado-validacion", true);
+  try {
+    const resp = await fetch(`${API_BASE}/api/validacion-plantilla/procesar`, { method: "POST", body: fd });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      mostrarAlerta("alerta-validacion", data.mensaje || "No se pudo validar la plantilla.");
+      return;
+    }
+    const rs = data.resumen || {};
+    const cont = document.getElementById("metricas-validacion");
+    cont.innerHTML = "";
+    cont.appendChild(crearMetrica(rs.bloques_total ?? "—", "Bloques (contratistas)"));
+    cont.appendChild(crearMetrica(rs.bloques_ok ?? "—", "Bloques correctos", "ok"));
+    cont.appendChild(crearMetrica(rs.bloques_con_error ?? 0, "Bloques con error", (rs.bloques_con_error ? "ocre" : "")));
+    cont.appendChild(crearMetrica(rs.celdas_con_caracteres ?? 0, "Celdas con caracteres", (rs.celdas_con_caracteres ? "ocre" : "")));
+
+    // Detalle de estructura
+    const estr = data.estructura || [];
+    const boxE = document.getElementById("detalle-estructura");
+    if (estr.length) {
+      let html = '<div class="alerta alerta-aviso" style="display:block;margin-bottom:10px;"><strong>Errores de estructura:</strong> ' + estr.length + ' bloque(s) a revisar.</div>';
+      html += '<div class="tabla-wrap"><table class="tabla-datos"><thead><tr><th>Fila</th><th>Contratista</th><th>Problemas</th></tr></thead><tbody>';
+      estr.forEach(x => {
+        html += `<tr><td>${x.fila}</td><td>${x.contratista || ""}</td><td>${x.problemas.join("; ")}</td></tr>`;
+      });
+      html += '</tbody></table></div>';
+      boxE.innerHTML = html;
+    } else {
+      boxE.innerHTML = '<div class="alerta alerta-aviso" style="display:block;background:#e3f2e9;color:#1f7a4d;">Estructura de bloques C/P40/P31 correcta.</div>';
+    }
+
+    // Detalle de caracteres
+    const chars = data.caracteres || [];
+    const boxC = document.getElementById("detalle-caracteres");
+    if (chars.length) {
+      let html = '<div class="alerta alerta-aviso" style="display:block;margin-bottom:10px;"><strong>Caracteres problemáticos:</strong> ' + chars.length + ' celda(s)' + (data.caracteres_truncado ? " (mostrando las primeras 200)" : "") + '.</div>';
+      html += '<div class="tabla-wrap"><table class="tabla-datos"><thead><tr><th>Celda</th><th>Valor</th><th>Problemas</th></tr></thead><tbody>';
+      chars.forEach(x => {
+        html += `<tr><td>${x.celda}</td><td>${(x.valor||"").replace(/</g,"&lt;")}</td><td>${x.problemas.join("; ")}</td></tr>`;
+      });
+      html += '</tbody></table></div>';
+      boxC.innerHTML = html;
+    } else {
+      boxC.innerHTML = '<div class="alerta alerta-aviso" style="display:block;background:#e3f2e9;color:#1f7a4d;">Sin caracteres problemáticos para SAP.</div>';
+    }
+
+    document.getElementById("resultados-validacion").classList.add("visible");
+  } catch (err) {
+    mostrarAlerta("alerta-validacion", "Error de conexión con el servidor. Verifica que el backend esté en ejecución.");
+  } finally {
+    btn.disabled = false;
+    mostrarEstado("estado-validacion", false);
   }
 });
