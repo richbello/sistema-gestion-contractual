@@ -114,6 +114,8 @@ def generar_plantilla_pagos(ruta_entrada_excel, ruta_salida_excel):
 
     fila_actual = 2
     filas_44    = 0
+    desde_registro = 0   # cuentas tomadas del registro depurado
+    sin_cruzar     = []  # (cedula, nombre) que NO estaban en el registro
     hoy         = datetime.now().strftime("%Y%m%d")
 
     for idx, row in df.iterrows():
@@ -173,6 +175,9 @@ def generar_plantilla_pagos(ruta_entrada_excel, ruta_salida_excel):
             bco_raw  = re.sub(r'[^\d]', '', cuenta_reg['codigo_banco']).zfill(3)
             cta_raw  = re.sub(r'[^\d]', '', cuenta_reg['numero_cuenta'])
             tipo_cta = re.sub(r'[^\d]', '', cuenta_reg['tipo_cuenta']).zfill(2)
+            desde_registro += 1
+        else:
+            sin_cruzar.append((no_ident, contratista))
 
         del_v   = _fmt_fecha(str(_val(row, C_DEL) or ''))
         al_v    = _fmt_fecha(str(_val(row, C_AL)  or ''))
@@ -241,4 +246,6 @@ def generar_plantilla_pagos(ruta_entrada_excel, ruta_salida_excel):
         "filas_con_codigo_44"   : filas_44,
         "tiene_columnas_honorarios": tiene_honor,
         "archivo_salida"        : ruta_salida_excel,
+        "cuentas_desde_registro": desde_registro,
+        "cuentas_sin_cruzar"    : [{"cedula": c, "nombre": n} for c, n in sin_cruzar],
     }
