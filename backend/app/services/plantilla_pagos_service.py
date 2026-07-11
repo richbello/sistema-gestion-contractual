@@ -11,6 +11,15 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 
+# Cruce con el registro depurado de cuentas bancarias (a prueba de fallos:
+# si el servicio no estuviera disponible, buscar_cuenta devuelve None y el
+# modulo sigue funcionando exactamente como antes, usando el Excel).
+try:
+    from .cuentas_bancarias_service import buscar_cuenta
+except Exception:
+    def buscar_cuenta(_cedula):
+        return None
+
 EQUIVALENCIAS = {
     "0,100%":"01","0,050%":"02","0,200%":"03","0,110%":"06",
     "2,000%":"08","0,350%":"10","0,400%":"11","1,000%":"12",
@@ -155,6 +164,15 @@ def generar_plantilla_pagos(ruta_entrada_excel, ruta_salida_excel):
                           re.sub(r'\.0$', '', str(_val(row, C_CUENTA) or '').strip()))
         tipo_cta = re.sub(r'[^\d]', '',
                           str(_val(row, C_TIPO_CTA) or '02')).strip().zfill(2)
+
+        # --- Cruce con el registro depurado de cuentas bancarias ---
+        # Si la cedula esta en el registro, sus datos mandan (fuente unica
+        # y depurada). Si no esta, se respeta lo de la extraccion.
+        cuenta_reg = buscar_cuenta(no_ident)
+        if cuenta_reg:
+            bco_raw  = re.sub(r'[^\d]', '', cuenta_reg['codigo_banco']).zfill(3)
+            cta_raw  = re.sub(r'[^\d]', '', cuenta_reg['numero_cuenta'])
+            tipo_cta = re.sub(r'[^\d]', '', cuenta_reg['tipo_cuenta']).zfill(2)
 
         del_v   = _fmt_fecha(str(_val(row, C_DEL) or ''))
         al_v    = _fmt_fecha(str(_val(row, C_AL)  or ''))
