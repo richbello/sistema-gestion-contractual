@@ -300,6 +300,22 @@ document.getElementById("form-plantilla").addEventListener("submit", async (e) =
     cont.appendChild(crearMetrica(data.registros_procesados, "Registros procesados"));
     cont.appendChild(crearMetrica(data.filas_con_codigo_44, "Con honorarios (cód. 44)", "ocre"));
     cont.appendChild(crearMetrica(data.tiene_columnas_honorarios ? "Sí" : "No", "Columnas de honorarios detectadas"));
+    cont.appendChild(crearMetrica(data.cuentas_desde_registro ?? "—", "Cuentas verificadas contra el registro"));
+    const sinCruzar = data.cuentas_sin_cruzar || [];
+    cont.appendChild(crearMetrica(sinCruzar.length, "Cuentas por revisar", sinCruzar.length ? "ocre" : ""));
+    // Aviso detallado cuando hay cedulas que no cruzaron con el registro
+    const idAviso = "aviso-cuentas-plantilla";
+    let aviso = document.getElementById(idAviso);
+    if (aviso) aviso.remove();
+    if (sinCruzar.length) {
+      aviso = document.createElement("div");
+      aviso.id = idAviso;
+      aviso.className = "alerta alerta-aviso";
+      aviso.style.display = "block";
+      const lista = sinCruzar.map(c => `${c.nombre} (${c.cedula})`).join(", ");
+      aviso.innerHTML = `<strong>Revisar cuentas:</strong> ${sinCruzar.length} contratista(s) no están en el registro depurado, por lo que su cuenta se tomó del archivo de extracción. Verifica antes de pagar: ${lista}.`;
+      cont.parentNode.insertBefore(aviso, cont.nextSibling);
+    }
     document.getElementById("link-descarga-plantilla").href = API_BASE + data.descarga;
     document.getElementById("resultados-plantilla").classList.add("visible");
   } catch (err) {

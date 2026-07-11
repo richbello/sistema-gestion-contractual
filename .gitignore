@@ -34,3 +34,7 @@ backend/*.xlsx
 backend/*.pdf
 backend/generar_faltantes.py
 backend/**/*.bak
+
+# Respaldos locales
+**/*.bak
+**/*.bak2
