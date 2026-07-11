@@ -28,3 +28,9 @@ backend/outputs/*
 # Datos fuente locales (no versionar)
 backend/cuentas.xlsx
 backend/importar_cuentas.py
+
+# Datos locales y archivos de trabajo (no versionar)
+backend/*.xlsx
+backend/*.pdf
+backend/generar_faltantes.py
+backend/**/*.bak

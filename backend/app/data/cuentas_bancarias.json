@@ -1,8 +1,8 @@
 {
   "meta": {
-    "generado": "2026-07-11T20:34:53",
-    "fuente": "cuentas.xlsx",
-    "total": 677
+    "generado": "2026-07-11T22:21:43",
+    "fuente": "runtime",
+    "total": 754
   },
   "cuentas": {
     "80259632": {
@@ -4066,6 +4066,468 @@
       "tipo_cuenta": "02",
       "codigo_banco": "051",
       "numero_cuenta": "7900287975"
+    },
+    "80763899": {
+      "nombre": "ALEXANDER HERNANDEZ GARCIA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "91282253360"
+    },
+    "1109410008": {
+      "nombre": "ANA LUCIA DEVIA POLANIA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "09421269456"
+    },
+    "52430142": {
+      "nombre": "ANDREA ROMERO LOPEZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "462470047608"
+    },
+    "1026584075": {
+      "nombre": "ANDREA VANESA JAIMES CARDENAS",
+      "tipo_cuenta": "02",
+      "codigo_banco": "023",
+      "numero_cuenta": "278854740"
+    },
+    "1030689892": {
+      "nombre": "ANDRES CAMILO SERRANO BUSTAMANTE",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "09400006957"
+    },
+    "1013665485": {
+      "nombre": "ANDRÉS CAMILO CASTRO MURCIA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "18064000663"
+    },
+    "1022947422": {
+      "nombre": "ANGELA PATRICIA ARDILA CASTAÑEDA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24132215813"
+    },
+    "1013640940": {
+      "nombre": "BRENDA KATHERINE PEÑALOSA CUBIDES",
+      "tipo_cuenta": "02",
+      "codigo_banco": "061",
+      "numero_cuenta": "00051503086281"
+    },
+    "1055226603": {
+      "nombre": "CARLOS ANDRES RODRIGUEZ FERRUCHO",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "04351305423"
+    },
+    "1022338155": {
+      "nombre": "CARLOS FELIPE ACOSTA CORDOBA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24138378147"
+    },
+    "30507754": {
+      "nombre": "CAROLINA CALDERON HENAO",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "12226854744"
+    },
+    "80121263": {
+      "nombre": "CESAR DAVID MENDEZ RIOS",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "66211725096"
+    },
+    "4077647": {
+      "nombre": "CESAR JULIO ROMERO VARGAS",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "0550488441079933"
+    },
+    "1019066849": {
+      "nombre": "CLAUDIA FERNANDA RESTREPO BOTERO",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "20614173786"
+    },
+    "1007672939": {
+      "nombre": "DANIELA ALEJANDRA RODRIGUEZ ATUESTA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "3114438264"
+    },
+    "1032478065": {
+      "nombre": "DANIELA FERNANDA CALDERÓN LEÓN",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "457900077860"
+    },
+    "1049613546": {
+      "nombre": "DAVID LEONARDO CASTELLANOS ALVAREZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "176570074151"
+    },
+    "23690659": {
+      "nombre": "DEISSY YOLIMA PAEZ MEDINA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24142469561"
+    },
+    "1010170661": {
+      "nombre": "DIANA MARCELA RUBIO BERIGUES",
+      "tipo_cuenta": "02",
+      "codigo_banco": "002",
+      "numero_cuenta": "500800359470"
+    },
+    "79111841": {
+      "nombre": "ELIECER ROJAS DIAZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "38885718172"
+    },
+    "52534303": {
+      "nombre": "EMILCE MAHECHA PAEZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24093681577"
+    },
+    "1002631668": {
+      "nombre": "ERICA FERNANDA HERNANDEZ CASTELLANOS",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24104180880"
+    },
+    "1010191672": {
+      "nombre": "ERIKA LIZETH CALDERON POVEDA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "013",
+      "numero_cuenta": "272116708"
+    },
+    "1000692781": {
+      "nombre": "ERIKA VALENTINA CRUZ VANEGAS",
+      "tipo_cuenta": "02",
+      "codigo_banco": "056",
+      "numero_cuenta": "111770029019"
+    },
+    "1031162801": {
+      "nombre": "ERNESTO SALGADO MORANTES",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "89275019"
+    },
+    "1061206023": {
+      "nombre": "EVELINA BANGUERA FILOTEO",
+      "tipo_cuenta": "02",
+      "codigo_banco": "013",
+      "numero_cuenta": "390005799"
+    },
+    "14324565": {
+      "nombre": "FERNANDO ALIRIO HENAO CASTAÑEDA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "001",
+      "numero_cuenta": "316333053"
+    },
+    "79554192": {
+      "nombre": "FREDDY ALEXANDER SANCHEZ SANCHEZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "001",
+      "numero_cuenta": "022464614"
+    },
+    "79912636": {
+      "nombre": "FREDDY GIOVANNI SALAMANCA RAMIREZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "008870528166"
+    },
+    "1014230448": {
+      "nombre": "HENRY ALEXANDER ESLAVA PULIDO",
+      "tipo_cuenta": "02",
+      "codigo_banco": "070",
+      "numero_cuenta": "515234265746"
+    },
+    "1026297715": {
+      "nombre": "IVETTE ALEJANDRA CARPENTIER HENAO",
+      "tipo_cuenta": "02",
+      "codigo_banco": "809",
+      "numero_cuenta": "86692280"
+    },
+    "1022946371": {
+      "nombre": "JEFFERSON ANDRES SANCHEZ RICO",
+      "tipo_cuenta": "02",
+      "codigo_banco": "001",
+      "numero_cuenta": "062181474"
+    },
+    "1014247481": {
+      "nombre": "JENNIFER KATERINE GUERRERO DIAZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "0550488438082445"
+    },
+    "13706284": {
+      "nombre": "JHON EDISSON PARDO HERREÑO",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "0570488470235851"
+    },
+    "1000991621": {
+      "nombre": "JOHAN NICOLAS GOMEZ FLOREZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "14170236379"
+    },
+    "1030661016": {
+      "nombre": "JOHAN SEBASTIAN PORRAS LOPEZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "019",
+      "numero_cuenta": "4512004435"
+    },
+    "1033804433": {
+      "nombre": "JOHAN YESID PARRA HERNANDEZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "019",
+      "numero_cuenta": "4702026314"
+    },
+    "1015417808": {
+      "nombre": "JOHANA MANYERLEY CANO CANTOR",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "91249732007"
+    },
+    "1022951595": {
+      "nombre": "JOHN ARLEY HERNANDEZ HERNANDEZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "019",
+      "numero_cuenta": "4662010123"
+    },
+    "1023893770": {
+      "nombre": "JONATHAN ALEXANDER CARMONA MORA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "66729903001"
+    },
+    "79270930": {
+      "nombre": "JORGE ENRIQUE BARON MARTINEZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24081536489"
+    },
+    "79624243": {
+      "nombre": "JUAN CARLO RUIZ CELY",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "001770031167"
+    },
+    "1022940472": {
+      "nombre": "JULIAN DAVID CUCUMA FRAILE",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "0550488424493754"
+    },
+    "53006810": {
+      "nombre": "JULIE GISELA GONZALEZ ARIAS",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24134504470"
+    },
+    "107296829": {
+      "nombre": "KELLY JOHANA PALACIOS BONILLA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24116446987"
+    },
+    "1032374417": {
+      "nombre": "LADY ALEXANDRA CASAS",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24132175148"
+    },
+    "1010246979": {
+      "nombre": "LAURA ALEJANDRA CORTES TORRES",
+      "tipo_cuenta": "02",
+      "codigo_banco": "001",
+      "numero_cuenta": "327096889"
+    },
+    "1030618874": {
+      "nombre": "LAURA CRISTINA RUBIO ARIZA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "013",
+      "numero_cuenta": "032003419"
+    },
+    "52847248": {
+      "nombre": "LINA MARGARITA CEBALLOS VERDUGO",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "0550488409568349"
+    },
+    "1023027255": {
+      "nombre": "LUISA FERNANDA SANDOVAL PARDO",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "0550488409456610"
+    },
+    "1013599852": {
+      "nombre": "LUZ DARY GUZMAN ZAPATA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "0550007000778659"
+    },
+    "1111200701": {
+      "nombre": "MAIRA ALEJANDRA MARTINEZ BABATIVA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "06893357350"
+    },
+    "1030602811": {
+      "nombre": "MARIA CRISTINA ALVAREZ ESPINOSA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "21340618987"
+    },
+    "1022968374": {
+      "nombre": "MARIA DE LOS ANGELES LARGO MANCILLA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "0550488431934386"
+    },
+    "28216225": {
+      "nombre": "MARIA DEL CARMEN PARRA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "09417096253"
+    },
+    "2926560": {
+      "nombre": "MARILUZ ROCHA GÓMEZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "001",
+      "numero_cuenta": "437350127"
+    },
+    "79598303": {
+      "nombre": "MAURICIO RODRIGUEZ ALVAREZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "023",
+      "numero_cuenta": "23100005380"
+    },
+    "1031160177": {
+      "nombre": "MAYRA ALEJANDRA FORERO REY NIT. O C.C. 1.031.160.177",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24122473597"
+    },
+    "1110558008": {
+      "nombre": "NATALY ARDILA SANCHEZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "006",
+      "numero_cuenta": "86981617624"
+    },
+    "51824910": {
+      "nombre": "NELLY SOBEIDA BAUTISTA TORRES",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24150667234"
+    },
+    "79134250": {
+      "nombre": "OMAR ENRIQUE AGUILAR OVIEDO",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24130721374"
+    },
+    "80467194": {
+      "nombre": "OMAR GARZON RODRIGUEZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "052",
+      "numero_cuenta": "067829981"
+    },
+    "79694245": {
+      "nombre": "OSCAR ALEXANDER BELTRAN JIMENEZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "001",
+      "numero_cuenta": "437446412"
+    },
+    "80238386": {
+      "nombre": "OSCAR FERNANDO CASTRO PULIDO",
+      "tipo_cuenta": "02",
+      "codigo_banco": "002",
+      "numero_cuenta": "500806200726"
+    },
+    "1032456151": {
+      "nombre": "OSCAR JAVIER OVALLE RIVERA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "0550462300050582"
+    },
+    "74240177": {
+      "nombre": "RAFAEL ANTONIO BELTRAN GUERRERO",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24060375106"
+    },
+    "52453712": {
+      "nombre": "RENATA FAJARDO LOPEZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "006301319742"
+    },
+    "52076726": {
+      "nombre": "RUBIELA MOJICA BOLAÑOS",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24063196186"
+    },
+    "4275506": {
+      "nombre": "SERGIO PATROCINIO JUNCO MUÑOZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "002",
+      "numero_cuenta": "230009013764"
+    },
+    "52993507": {
+      "nombre": "SONIA DAYAN BARON AMADO",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "0550488425755862"
+    },
+    "79854716": {
+      "nombre": "VICTOR LISANDRO BUITRAGO",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24084558363"
+    },
+    "80767026": {
+      "nombre": "WILLIAM DAVID VARGAS REYES",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24526475126"
+    },
+    "79646061": {
+      "nombre": "WILSON GUERRERO VERA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "24400000795"
+    },
+    "1022371289": {
+      "nombre": "YALINA VANEGAS CORTEZ NIT. O C.C. 1.022.371.289",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "91296822022"
+    },
+    "39796800": {
+      "nombre": "YANEIDA RUEDA SALAZAR",
+      "tipo_cuenta": "02",
+      "codigo_banco": "051",
+      "numero_cuenta": "0570004870431881"
+    },
+    "53129241": {
+      "nombre": "YENNY PAOLA MOYA",
+      "tipo_cuenta": "02",
+      "codigo_banco": "032",
+      "numero_cuenta": "24152214009"
+    },
+    "53014758": {
+      "nombre": "YURI ALEJANDRA VARGAS CRUZ",
+      "tipo_cuenta": "02",
+      "codigo_banco": "007",
+      "numero_cuenta": "3103419394"
     }
   }
 }
