@@ -29,6 +29,7 @@ def create_app():
     from .routes.cuadre_pac import cuadre_bp
     from .routes.estado_cuenta import estado_cuenta_bp
     from .routes.cuentas_bancarias import cuentas_bp
+    from .routes.validacion_plantilla import validacion_bp
     from .routes.paginas import paginas_bp
 
     app.register_blueprint(paginas_bp)
@@ -37,6 +38,7 @@ def create_app():
     app.register_blueprint(cuadre_bp, url_prefix="/api/cuadre-pac")
     app.register_blueprint(estado_cuenta_bp, url_prefix="/api/estado-cuenta")
     app.register_blueprint(cuentas_bp, url_prefix="/api/cuentas-bancarias")
+    app.register_blueprint(validacion_bp, url_prefix="/api/validacion-plantilla")
 
     @app.route("/api/salud")
     def salud():
