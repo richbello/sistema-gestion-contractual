@@ -451,6 +451,36 @@ document.getElementById("form-validacion").addEventListener("submit", async (e) 
       boxC.innerHTML = '<div class="alerta alerta-aviso" style="display:block;background:#e3f2e9;color:#1f7a4d;">Sin caracteres problemáticos para SAP.</div>';
     }
 
+// --- V2: BP creado ---
+    const bp = data.bp || [];
+    const sinBp = bp.filter(x => x.estado !== "OK");
+    const boxBp = document.getElementById("detalle-bp");
+    if (bp.length && sinBp.length) {
+      let h = '<div class="alerta alerta-aviso" style="display:block;margin-bottom:10px;"><strong>BP no creado:</strong> ' + sinBp.length + ' contratista(s) sin BP.</div>';
+      h += '<div class="tabla-wrap"><table class="tabla-datos"><thead><tr><th>Contrato</th><th>Documento</th><th>Contratista</th></tr></thead><tbody>';
+      sinBp.forEach(x => { h += `<tr><td>${x.contrato}</td><td>${x.doc}</td><td>${x.contratista||""}</td></tr>`; });
+      h += '</tbody></table></div>';
+      boxBp.innerHTML = h;
+    } else if (bp.length) {
+      boxBp.innerHTML = '<div class="alerta alerta-aviso" style="display:block;background:#e3f2e9;color:#1f7a4d;">Todos los contratistas tienen BP creado.</div>';
+    } else { boxBp.innerHTML = ""; }
+
+    // --- V3: recursos CRP ---
+    const crp = data.crp || [];
+    const probCrp = crp.filter(x => x.estado !== "OK");
+    const boxCrp = document.getElementById("detalle-crp");
+    if (crp.length && probCrp.length) {
+      let h = '<div class="alerta alerta-aviso" style="display:block;margin-bottom:10px;"><strong>Recursos CRP:</strong> ' + probCrp.length + ' pago(s) a revisar.</div>';
+      h += '<div class="tabla-wrap"><table class="tabla-datos"><thead><tr><th>Contrato</th><th>CRP</th><th>Detalle</th></tr></thead><tbody>';
+      probCrp.forEach(x => { h += `<tr><td>${x.contrato}</td><td>${x.crp||""}</td><td>${x.mensaje}</td></tr>`; });
+      h += '</tbody></table></div>';
+      boxCrp.innerHTML = h;
+    } else if (crp.length) {
+      boxCrp.innerHTML = '<div class="alerta alerta-aviso" style="display:block;background:#e3f2e9;color:#1f7a4d;">Todos los pagos tienen recursos CRP suficientes.</div>';
+    } else { boxCrp.innerHTML = ""; }
+
+
+
     document.getElementById("resultados-validacion").classList.add("visible");
   } catch (err) {
     mostrarAlerta("alerta-validacion", "Error de conexión con el servidor. Verifica que el backend esté en ejecución.");
