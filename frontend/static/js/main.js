@@ -2,6 +2,23 @@
    Sistema de Gestión Contractual y Financiera — lógica de interfaz
    ========================================================================== */
 const API_BASE = (typeof window.BACKEND_URL === "string" ? window.BACKEND_URL : "").replace(/\/$/, "");
+
+/* Descarga la plantilla saneada (base64 -> .xlsx) */
+function descargarSaneada(b64) {
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const blob = new Blob([bytes], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "Plantilla_Pagos_CORREGIDA.xlsx";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+
+
 const MODULOS = {
   extraccion:    { eyebrow: "Módulo 01", titulo: "Extracción de causaciones" },
   plantilla:     { eyebrow: "Módulo 02", titulo: "Plantilla de pagos" },
@@ -421,6 +438,8 @@ document.getElementById("form-validacion").addEventListener("submit", async (e) 
     cont.appendChild(crearMetrica(rs.bloques_con_error ?? 0, "Bloques con error", (rs.bloques_con_error ? "ocre" : "")));
     cont.appendChild(crearMetrica(rs.celdas_con_caracteres ?? 0, "Celdas con caracteres", (rs.celdas_con_caracteres ? "ocre" : "")));
 
+    cont.appendChild(crearMetrica(data.total_cambios ?? 0, "Correcciones aplicadas", (data.total_cambios ? "ok" : "")));
+
     // Detalle de estructura
     const estr = data.estructura || [];
     const boxE = document.getElementById("detalle-estructura");
@@ -449,6 +468,28 @@ document.getElementById("form-validacion").addEventListener("submit", async (e) 
       boxC.innerHTML = html;
     } else {
       boxC.innerHTML = '<div class="alerta alerta-aviso" style="display:block;background:#e3f2e9;color:#1f7a4d;">Sin caracteres problemáticos para SAP.</div>';
+    }
+
+    // Plantilla saneada + descarga
+    const cambios = data.cambios_saneado || [];
+    const boxS = document.getElementById("detalle-saneado");
+    if (data.plantilla_saneada_b64) {
+      let html = "";
+      if (cambios.length) {
+        html += '<div class="alerta alerta-aviso" style="display:block;margin-bottom:10px;"><strong>Correcciones aplicadas:</strong> ' + cambios.length + ' celda(s) saneada(s) para SAP.</div>';
+        html += '<div class="tabla-wrap"><table class="tabla-datos"><thead><tr><th>Celda</th><th>Antes</th><th>Después</th></tr></thead><tbody>';
+        cambios.forEach(x => {
+          html += `<tr><td>${x.celda}</td><td>${(x.antes||"").replace(/</g,"&lt;")}</td><td>${(x.despues||"").replace(/</g,"&lt;")}</td></tr>`;
+        });
+        html += '</tbody></table></div>';
+      } else {
+        html += '<div class="alerta alerta-aviso" style="display:block;background:#e3f2e9;color:#1f7a4d;">La plantilla ya estaba limpia; no hubo correcciones.</div>';
+      }
+      html += '<button type="button" class="btn-primario" id="btn-descargar-saneada" style="margin-top:10px;">Descargar plantilla corregida</button>';
+      boxS.innerHTML = html;
+      document.getElementById("btn-descargar-saneada").onclick = () => descargarSaneada(data.plantilla_saneada_b64);
+    } else {
+      boxS.innerHTML = "";
     }
 
 // --- V2: BP creado ---
