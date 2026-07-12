@@ -38,3 +38,5 @@ backend/**/*.bak
 # Respaldos locales
 **/*.bak
 **/*.bak2
+
+backend/importar_bp_crp.py
