@@ -7,6 +7,9 @@ V1: caracteres/SAP + estructura.  V2: BP creado.  V3: recursos CRP.
 import os
 import re
 import traceback
+from ..services.validacion_plantilla_service import validar_plantilla
+from ..services.validacion_bp_crp_service import validar_bp_crp
+from ..services.normalizacion import normalizar_nombre
 from flask import Blueprint, request, jsonify, current_app
 from openpyxl import load_workbook
 from ..services.validacion_plantilla_service import validar_plantilla
@@ -40,7 +43,7 @@ def _extraer_pagos(ruta):
                 "cedula": _digitos(r31[4].value) if r31 else "",
                 "crp": _digitos(r40[9].value) if r40 else "",
                 "importe": (r31[7].value if r31 else 0) or 0,
-                "contratista": r[10].value or "",
+                "contratista": normalizar_nombre(r[10].value),
             })
             i += 3
         else:

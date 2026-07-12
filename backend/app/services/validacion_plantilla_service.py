@@ -4,9 +4,11 @@ Validacion de plantilla de pagos (V1): caracteres/SAP + estructura.
 No modifica la plantilla; devuelve un informe estructurado.
 """
 import re
+import io
 import unicodedata
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
+from .normalizacion import normalizar_nombre, quitar_tildes
 
 INVISIBLES = {
     "espacio no-separable (NBSP)": "\u00a0",
@@ -47,6 +49,10 @@ def _analizar_texto(valor):
         if unicodedata.category(c).startswith("C") and c not in INVISIBLES.values():
             problemas.append(f"caracter de control U+{ord(c):04X}")
             break
+    acentuados = sorted({c for c in valor
+                         if unicodedata.combining(unicodedata.normalize("NFKD", c)[-1])})
+    if acentuados:
+        problemas.append("tilde o enie que SAP rechaza: " + " ".join(acentuados))
     return problemas
 
 
@@ -62,6 +68,30 @@ def _num(v):
 def _solo_digitos(v):
     return re.sub(r"\D", "", str(v or ""))
 
+
+def _generar_saneada(ruta_plantilla):
+    """Crea una copia del .xlsx con tildes/enie fuera en todas las columnas
+    de texto y normalizar_nombre completo solo en la columna K (nombre).
+    Devuelve (bytes_del_archivo, lista_de_cambios)."""
+    wb = load_workbook(ruta_plantilla, data_only=True)
+    ws = wb.active
+    cambios = []
+    for fila in ws.iter_rows(min_row=2):
+        for celda in fila:
+            if not isinstance(celda.value, str):
+                continue
+            original = celda.value
+            if celda.column == 11:  # columna K = nombre del beneficiario
+                nuevo = normalizar_nombre(original)
+            else:
+                nuevo = quitar_tildes(original)
+            if nuevo != original:
+                ref = f"{get_column_letter(celda.column)}{celda.row}"
+                cambios.append({"celda": ref, "antes": original[:60], "despues": nuevo[:60]})
+                celda.value = nuevo
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue(), cambios
 
 def validar_plantilla(ruta_plantilla):
     wb = load_workbook(ruta_plantilla, data_only=True)
@@ -139,6 +169,10 @@ def validar_plantilla(ruta_plantilla):
         else:
             i += 1
 
+    import base64
+    contenido, cambios = _generar_saneada(ruta_plantilla)
+    plantilla_b64 = base64.b64encode(contenido).decode("ascii")
+
     return {
         "ok": True,
         "archivo": ruta_plantilla,
@@ -151,4 +185,7 @@ def validar_plantilla(ruta_plantilla):
         "estructura": estructura,
         "caracteres": caracteres[:200],
         "caracteres_truncado": len(caracteres) > 200,
+        "cambios_saneado": cambios,
+        "total_cambios": len(cambios),
+        "plantilla_saneada_b64": plantilla_b64,
     }
