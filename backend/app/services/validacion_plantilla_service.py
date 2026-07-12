@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Validacion de plantilla de pagos (Fase 1): caracteres/SAP + estructura.
+Validacion de plantilla de pagos (V1): caracteres/SAP + estructura.
 No modifica la plantilla; devuelve un informe estructurado.
 """
 import re
@@ -71,7 +71,6 @@ def validar_plantilla(ruta_plantilla):
     estructura = []
     filas = list(ws.iter_rows(min_row=2))
 
-    # Capa 1: caracteres en celdas de texto
     for fila in filas:
         for celda in fila:
             if isinstance(celda.value, str):
@@ -84,7 +83,6 @@ def validar_plantilla(ruta_plantilla):
                         "problemas": probs,
                     })
 
-    # Capa 2: bloques C/P40/P31
     bloques_ok = 0
     bloques_total = 0
     i = 0
