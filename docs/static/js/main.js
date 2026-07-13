@@ -134,6 +134,12 @@ configurarDropzoneUnico("drop-plantilla-pac", "input-plantilla-pac", "lista-plan
 configurarDropzoneUnico("drop-reporte-pac", "input-reporte-pac", "lista-reporte-pac");
 configurarDropzoneUnico("drop-plantilla-ec", "input-plantilla-ec", "lista-plantilla-ec");
 configurarDropzoneUnico("drop-historico-ec", "input-historico-ec", "lista-historico-ec");
+
+configurarDropzoneUnico("drop-crp-ec", "input-crp-ec", "lista-crp-ec");
+configurarDropzoneUnico("drop-consolidado-ec", "input-consolidado-ec", "lista-consolidado-ec");
+
+
+
 /* ---------------------------- Estado del backend ---------------------------- */
 /* Servicios gratuitos como Render "duermen" el backend tras inactividad y la
    primera petición puede tardar 30-50s en responder mientras despierta. Esta
@@ -528,5 +534,59 @@ document.getElementById("form-validacion").addEventListener("submit", async (e) 
   } finally {
     btn.disabled = false;
     mostrarEstado("estado-validacion", false);
+  }
+});
+/* ---------------------------- Módulo 04: Estado de cuenta ---------------------------- */
+document.getElementById("form-estadocuenta").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  mostrarAlerta("alerta-estadocuenta", "");
+  document.getElementById("resultados-estadocuenta").classList.remove("visible");
+
+  const plantilla   = document.getElementById("input-plantilla-ec").files[0];
+  const crp         = document.getElementById("input-crp-ec").files[0];
+  const consolidado = document.getElementById("input-consolidado-ec").files[0];
+  const historico   = document.getElementById("input-historico-ec").files[0];
+  const contrato    = document.getElementById("input-contrato-ec").value.trim();
+
+  if (!plantilla || !crp || !contrato) {
+    mostrarAlerta("alerta-estadocuenta", "Debes adjuntar la plantilla, el Reporte CRP e indicar el número de contrato.");
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append("plantilla", plantilla);
+  fd.append("reporte_crp", crp);
+  if (consolidado) fd.append("consolidado", consolidado);
+  if (historico)   fd.append("historico", historico);
+  fd.append("contrato", contrato);
+
+  const btn = document.getElementById("btn-estadocuenta");
+  btn.disabled = true;
+  mostrarEstado("estado-estadocuenta", true);
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/estado-cuenta/procesar`, { method: "POST", body: fd });
+
+    if (!resp.ok) {
+      let msg = "No se pudo generar el estado de cuenta.";
+      try { const err = await resp.json(); if (err.mensaje) msg = err.mensaje; } catch (_) {}
+      mostrarAlerta("alerta-estadocuenta", msg);
+      return;
+    }
+
+    const blob = await resp.blob();
+    const url  = URL.createObjectURL(blob);
+    const nombre = `Estado_de_Cuenta_${contrato}.xlsx`;
+
+    const link = document.getElementById("link-descarga-estadocuenta");
+    link.href = url;
+    link.download = nombre;
+    document.getElementById("nombre-descarga-ec").textContent = nombre;
+    document.getElementById("resultados-estadocuenta").classList.add("visible");
+  } catch (err) {
+    mostrarAlerta("alerta-estadocuenta", "Error de conexión con el servidor. Verifica que el backend esté en ejecución.");
+  } finally {
+    btn.disabled = false;
+    mostrarEstado("estado-estadocuenta", false);
   }
 });
