@@ -63,6 +63,13 @@ HIS_RP         = 'Numero RP'
 HIS_CDP        = 'CDP Externo'
 HIS_CRP        = 'CRP Externo'
 
+HIS_STATUS     = 'Estatus'      # columna BH del histórico
+HIS_STATUS_OK  = 'PAGADA'
+
+
+
+
+
 # --- Coordenadas base del formato (antes de insertar adiciones) ---
 C_CTO, C_CONTRATISTA, C_CCNIT      = 'D5', 'D6', 'H6'
 C_VALOR, C_RPSAP1                  = 'D7', 'H7'
@@ -233,7 +240,11 @@ def _extraer_pagos(df_his, contrato):
     if df_his is None:
         return []
     df = df_his[df_his[HIS_REFERENCIA].astype(str).str.contains(contrato, na=False, regex=False)]
+
+    if HIS_STATUS in df.columns:
+        df = df[df[HIS_STATUS].astype(str).str.strip().str.upper() == HIS_STATUS_OK]
     pagos = []
+
     for _, p in df.iterrows():
         pagos.append({
             'periodo': '' if pd.isna(p.get(HIS_PERIODO)) else str(p.get(HIS_PERIODO)),
