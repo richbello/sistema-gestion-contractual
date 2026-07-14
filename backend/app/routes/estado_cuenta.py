@@ -286,7 +286,7 @@ def generar_estado_cuenta(plantilla_path, crp_path, consolidado_path,
 
     df_crp = pd.read_excel(crp_path, sheet_name=0, engine="calamine")
     df_con = pd.read_excel(consolidado_path, sheet_name=0, engine="calamine") if consolidado_path else None
-    __cols_his = [HIS_REFERENCIA, HIS_VALOR, HIS_PERIODO, HIS_DOC,
+    _cols_his = [HIS_REFERENCIA, HIS_VALOR, HIS_PERIODO, HIS_DOC,
                  HIS_FECHA, HIS_RP, HIS_CDP, HIS_CRP, HIS_STATUS, HIS_PROVEEDOR]
     if historico_path:
         df_his = pd.read_excel(historico_path, sheet_name=0,
