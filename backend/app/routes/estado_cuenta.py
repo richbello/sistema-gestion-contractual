@@ -59,6 +59,7 @@ HIS_VALOR      = 'Valor Bruto'
 HIS_PERIODO    = 'Texto cabecera documento'
 HIS_DOC        = 'Doc.compensación'
 HIS_FECHA      = 'Fecha de pago'
+HIS_PROVEEDOR  = 'Proveedor'     # codigo BP SAP en el historico
 HIS_RP         = 'Numero RP'
 HIS_CDP        = 'CDP Externo'
 HIS_CRP        = 'CRP Externo'
@@ -72,6 +73,7 @@ HIS_STATUS_OK  = 'PAGADA'
 
 # --- Coordenadas base del formato (antes de insertar adiciones) ---
 C_CTO, C_CONTRATISTA, C_CCNIT      = 'D5', 'D6', 'H6'
+C_BPSAP                            = 'H5'
 C_VALOR, C_RPSAP1                  = 'D7', 'H7'
 C_FECHA_INI, C_FECHA_FIN           = 'D8', 'H8'
 FILA_ADICION_1                     = 9      # D9 valor / H9 RP de la 1ª adición
@@ -235,6 +237,24 @@ def _extraer_datos_consolidado(df_con, contrato):
         'fecha_fin': _fecha(r.get(CON_FECHA_FIN)),
     }
 
+def _fmt_doc(v):
+    """Numero de documento sin el .0 que deja pandas al leerlo como float."""
+    if pd.isna(v):
+        return ''
+    try:
+        return str(int(float(v)))
+    except (ValueError, TypeError):
+        return str(v).strip()
+
+
+def _fmt_fecha(v):
+    """Fecha sin la hora 00:00:00."""
+    if pd.isna(v):
+        return ''
+    try:
+        return pd.to_datetime(v).strftime('%Y-%m-%d')
+    except (ValueError, TypeError):
+        return str(v).split(' ')[0]
 
 def _extraer_pagos(df_his, contrato):
     if df_his is None:
@@ -249,11 +269,12 @@ def _extraer_pagos(df_his, contrato):
         pagos.append({
             'periodo': '' if pd.isna(p.get(HIS_PERIODO)) else str(p.get(HIS_PERIODO)),
             'valor':   float(p.get(HIS_VALOR, 0) or 0),
-            'doc':     '' if pd.isna(p.get(HIS_DOC)) else str(p.get(HIS_DOC)),
-            'fecha':   '' if pd.isna(p.get(HIS_FECHA)) else str(p.get(HIS_FECHA)),
+            'doc':     _fmt_doc(p.get(HIS_DOC)),
+            'fecha':   _fmt_fecha(p.get(HIS_FECHA)),
             'rp':      '' if pd.isna(p.get(HIS_RP)) else str(p.get(HIS_RP)),
             'cdp':     '' if pd.isna(p.get(HIS_CDP)) else str(p.get(HIS_CDP)),
-            'crp':     '' if pd.isna(p.get(HIS_CRP)) else str(p.get(HIS_CRP)),
+        'crp':     '' if pd.isna(p.get(HIS_CRP)) else str(p.get(HIS_CRP)),
+            'bp_sap':  _fmt_doc(p.get(HIS_PROVEEDOR)),
         })
     return pagos
 
@@ -265,8 +286,8 @@ def generar_estado_cuenta(plantilla_path, crp_path, consolidado_path,
 
     df_crp = pd.read_excel(crp_path, sheet_name=0, engine="calamine")
     df_con = pd.read_excel(consolidado_path, sheet_name=0, engine="calamine") if consolidado_path else None
-    _cols_his = [HIS_REFERENCIA, HIS_VALOR, HIS_PERIODO, HIS_DOC,
-                 HIS_FECHA, HIS_RP, HIS_CDP, HIS_CRP, HIS_STATUS]
+    __cols_his = [HIS_REFERENCIA, HIS_VALOR, HIS_PERIODO, HIS_DOC,
+                 HIS_FECHA, HIS_RP, HIS_CDP, HIS_CRP, HIS_STATUS, HIS_PROVEEDOR]
     if historico_path:
         df_his = pd.read_excel(historico_path, sheet_name=0,
                                usecols=lambda c: c in _cols_his,
@@ -289,6 +310,7 @@ def generar_estado_cuenta(plantilla_path, crp_path, consolidado_path,
     fecha_fin = con['fecha_fin'] if con else None
     adiciones = crp['adiciones']
     n_ad = len(adiciones)
+    bp_sap = pagos[0]['bp_sap'] if pagos else ''
 
     wb = load_workbook(plantilla_path)
     ws = wb.active
@@ -297,6 +319,8 @@ def generar_estado_cuenta(plantilla_path, crp_path, consolidado_path,
     ws[C_CTO] = contrato
     ws[C_CONTRATISTA] = nombre
     ws[C_CCNIT] = doc
+    if bp_sap:
+        ws[C_BPSAP] = bp_sap; ws[C_BPSAP].number_format = 'General'
     ws[C_VALOR] = valor_inicial
     if crp['rp_sap1'] != '':
         ws[C_RPSAP1] = crp['rp_sap1']; ws[C_RPSAP1].number_format = 'General'
