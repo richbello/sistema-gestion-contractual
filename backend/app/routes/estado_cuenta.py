@@ -288,10 +288,18 @@ def generar_estado_cuenta(plantilla_path, crp_path, consolidado_path,
     df_con = pd.read_excel(consolidado_path, sheet_name=0, engine="calamine") if consolidado_path else None
     _cols_his = [HIS_REFERENCIA, HIS_VALOR, HIS_PERIODO, HIS_DOC,
                  HIS_FECHA, HIS_RP, HIS_CDP, HIS_CRP, HIS_STATUS, HIS_PROVEEDOR]
+    # Mapa canonico: nombre normalizado (minusculas, sin espacios extra) -> nombre oficial
+    _canon = {c.strip().lower(): c for c in _cols_his}
+    def _quiere_col(c):
+        return c.strip().lower() in _canon
     if historico_path:
         df_his = pd.read_excel(historico_path, sheet_name=0,
-                               usecols=lambda c: c in _cols_his,
+                               usecols=_quiere_col,
                                engine="calamine")
+        # Renombrar a la forma oficial por si venian con otra capitalizacion
+        df_his = df_his.rename(columns={c: _canon[c.strip().lower()]
+                                        for c in df_his.columns
+                                        if c.strip().lower() in _canon})
     else:
         df_his = None
 
