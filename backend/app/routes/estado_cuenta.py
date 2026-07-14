@@ -272,8 +272,8 @@ def _extraer_pagos(df_his, contrato):
             'doc':     _fmt_doc(p.get(HIS_DOC)),
             'fecha':   _fmt_fecha(p.get(HIS_FECHA)),
             'rp':      '' if pd.isna(p.get(HIS_RP)) else str(p.get(HIS_RP)),
-            'cdp':     '' if pd.isna(p.get(HIS_CDP)) else str(p.get(HIS_CDP)),
-        'crp':     '' if pd.isna(p.get(HIS_CRP)) else str(p.get(HIS_CRP)),
+            'cdp':     _fmt_doc(p.get(HIS_CDP)),
+            'crp':     _fmt_doc(p.get(HIS_CRP)),
             'bp_sap':  _fmt_doc(p.get(HIS_PROVEEDOR)),
         })
     return pagos
