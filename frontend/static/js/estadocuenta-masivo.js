@@ -281,10 +281,10 @@ def _dm(ws,fila,ci=2,cf=10):
         a,b,c,d=range_boundaries(r.coord)
         if b<=fila<=d and a<=cf and c>=ci: q.append(r.coord)
     for x in q: ws.unmerge_cells(x)
-def _cab(ws,m,dc):
+def _cab(ws,m,dc,nombre_hist=""):
     vi=_num(dc.get("valor_inicial")); vf=_num(dc.get("valor_final")); ad=vf-vi
     fi=_fecha(dc.get("fecha_inicial")); fti=_fecha(dc.get("fecha_term_inicial")); ftf=_fecha(dc.get("fecha_term_final"))
-    nom=_txt(dc.get("nombre"))
+    nom=_txt(dc.get("nombre")) or _txt(nombre_hist)
     if nom: _wc(ws,"D6",nom,m=m)
     if _limpiar(dc.get("cedula","")): _wc(ws,"H6",_limpiar(dc.get("cedula","")),m=m)
     _wc(ws,"D7",vi,money=True,m=m)
@@ -308,7 +308,7 @@ def llenar(plantilla_b64, pagos_json, contrato, datos_json):
     _wc(ws,"D5",contrato,m=m)
     _wc(ws,"H5",_limpiar(_g(pn0,"Proveedor")),m=m)
     _wc(ws,"H7",_limpiar(_g(pn0,"Numero RP")),m=m)
-    if dc: val=_cab(ws,m,dc)
+    if dc: val=_cab(ws,m,dc,_g(pn0,"Nombre"))
     else:
         val=_num(_g(pn0,"VALOR FINAL DEL CONTRATO"))
         _wc(ws,"D6",_txt(_g(pn0,"Nombre")),m=m)
