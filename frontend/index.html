@@ -337,8 +337,27 @@
 
 
     <!-- ===================== VISTA 4: ESTADO DE CUENTA ===================== -->
-    <section class="vista" id="vista-estadocuenta" hidden>
-      
+        <section class="vista" id="vista-estadocuenta" hidden>
+      <style>
+        .ec-tabs { display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid #e2e8f0; }
+        .ec-tab { background:none; border:0; padding:10px 18px; cursor:pointer; font-size:.95rem; font-weight:600; color:#64748b; border-bottom:2px solid transparent; margin-bottom:-1px; }
+        .ec-tab:hover { color:#334155; }
+        .ec-tab.activo { color:#4f46e5; border-bottom-color:#4f46e5; }
+        .ec-panel { display:none; }
+        .ec-panel.activo { display:block; }
+        .ec-mas-motor { border:1px solid #f6ad55; background:#fffaf0; padding:10px 12px; border-radius:8px; font-size:.85rem; margin-bottom:16px; }
+        #ec-masivo-progreso { margin-top:10px; color:#4f46e5; font-family:monospace; font-size:.85rem; white-space:pre-line; }
+        #ec-masivo-alerta { margin-top:12px; color:#dc2626; font-weight:600; }
+        #ec-masivo-metricas { display:flex; gap:10px; flex-wrap:wrap; margin-top:18px; }
+        #ec-masivo-detalle { margin-top:10px; font-size:.82rem; color:#475569; }
+      </style>
+
+      <div class="ec-tabs">
+        <button type="button" class="ec-tab activo" data-panel="ec-individual">Estado de cuenta individual</button>
+        <button type="button" class="ec-tab" data-panel="ec-masivo">Estado de cuenta masivo</button>
+      </div>
+
+      <div id="ec-individual" class="ec-panel activo">
 
       <form class="panel" id="form-estadocuenta">
         <div class="panel-acento-superior"></div>
@@ -442,6 +461,49 @@
           </div>
         </div>
       </form>
+
+      </div>
+
+      <div id="ec-masivo" class="ec-panel">
+        <form class="panel" onsubmit="return false;">
+          <div class="panel-acento-superior"></div>
+          <div class="panel-cuerpo">
+            <div id="ec-masivo-motor" class="ec-mas-motor">El motor se prepara al abrir esta pestaña…</div>
+            <div class="ayuda" style="margin-bottom:12px;">Genera varios estados de cuenta a la vez (pagos + cabecera del SECOP2) y descárgalos en un ZIP.</div>
+            <div class="grid-form">
+              <div class="campo">
+                <label>Plantilla de estado de cuenta</label>
+                <input type="file" id="input-plantilla-ec-masivo" accept=".xlsx,.xls">
+              </div>
+              <div class="campo">
+                <label>Histórico de pagos</label>
+                <input type="file" id="input-historico-ec-masivo" accept=".xlsx,.xls">
+              </div>
+              <div class="campo">
+                <label>Consolidado SECOP2</label>
+                <input type="file" id="input-secop-ec-masivo" accept=".xlsx,.xls">
+              </div>
+              <div class="campo">
+                <label>Contratos (uno por línea)</label>
+                <textarea id="input-contratos-ec-masivo" rows="6" placeholder="130-2025&#10;471-2023&#10;507-2023" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:8px; font-family:monospace;"></textarea>
+              </div>
+            </div>
+            <div class="barra-acciones">
+              <button type="button" class="btn btn-primario" id="btn-ec-masivo">
+                <svg class="icono-btn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                Generar ZIP
+              </button>
+            </div>
+            <div id="ec-masivo-progreso"></div>
+            <div id="ec-masivo-alerta"></div>
+            <div id="ec-masivo-resultados" style="display:none;">
+              <div id="ec-masivo-metricas"></div>
+              <div id="ec-masivo-detalle"></div>
+            </div>
+          </div>
+        </form>
+      </div>
+
     </section>
 
 
@@ -697,5 +759,6 @@
 <script src="static/js/modulo-09-ciberseguridad.js"></script>
 <script src="static/js/modulo-10-licencias.js"></script>
   <script src="static/js/asistente-ia.js"></script>
+  <script src="static/js/estadocuenta-masivo.js"></script>
 </body>
 </html>
