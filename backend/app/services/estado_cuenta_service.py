@@ -313,8 +313,47 @@ def generar_estado_cuenta_desde_datos(ruta_plantilla, pagos, contrato_buscado, r
     # ============================================
     # NUEVO: Detectar y llenar cesiones automáticamente
     # ============================================
+    # ============================================
+    # NUEVO: Detectar y llenar cesiones automáticamente
+    # ============================================
     try:
-        from .estado_cuenta_cesiones import detectar_cesiones, llenar_seccion_cesion, _insertar_filas_para_cesiones
+        import sys
+        if 'estado_cuenta_cesiones' not in sys.modules:
+            from . import estado_cuenta_cesiones
+        else:
+            estado_cuenta_cesiones = sys.modules['estado_cuenta_cesiones']
+        
+        cesiones_detectadas = estado_cuenta_cesiones.detectar_cesiones(pagos)
+        
+        if cesiones_detectadas:
+            # Obtener nombre del cedente
+            cedente_nombre = cesiones_detectadas['cedente']['nombre']
+            cedente_valor = cesiones_detectadas['cedente']['total']
+            
+            num_cesionarios = len(cesiones_detectadas['cesionarios'])
+            
+            # Si hay más de 1 cesionario, insertar filas adicionales
+            if num_cesionarios > 1:
+                estado_cuenta_cesiones._insertar_filas_para_cesiones(ws, num_cesionarios - 1)
+            
+            # Llenar cada cesión
+            fila_datos = 29
+            fila_pagos = 40
+            
+            for idx, cesionario in enumerate(cesiones_detectadas['cesionarios']):
+                # Si no es la primera cesión, ajustar filas para acomodar la anterior
+                if idx > 0:
+                    fila_datos += 20
+                    fila_pagos += 20
+                
+                estado_cuenta_cesiones.llenar_seccion_cesion(
+                    ws,
+                    cesionario,
+                    fila_inicio_datos=fila_datos,
+                    fila_inicio_pagos=fila_pagos,
+                    cedente_nombre=cedente_nombre,
+                    cedente_valor=cedente_valor
+                )
         
         cesiones_detectadas = detectar_cesiones(pagos)
         
