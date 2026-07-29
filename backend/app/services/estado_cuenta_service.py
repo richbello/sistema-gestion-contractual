@@ -244,3 +244,20 @@ def generar_estado_cuenta_desde_datos(ruta_plantilla, pagos, contrato_buscado, r
         "saldo_final": float(saldo_acumulado),
         "archivo_salida": ruta_salida_excel,
     }
+# ============================================
+# EXTENSIÓN: Detección automática de cesiones
+# ============================================
+
+from .estado_cuenta_cesiones import generar_estado_cuenta_con_cesiones
+
+def generar_estado_cuenta_desde_datos_con_cesiones(ruta_plantilla, pagos, contrato_buscado, ruta_salida_excel):
+    """
+    Nueva versión que detecta cesiones automáticamente.
+    Reemplaza a generar_estado_cuenta_desde_datos() cuando hay múltiples contratistas.
+    """
+    return generar_estado_cuenta_con_cesiones(
+        ruta_plantilla=ruta_plantilla,
+        pagos=pagos,
+        contrato_buscado=contrato_buscado,
+        ruta_salida_excel=ruta_salida_excel
+    )
