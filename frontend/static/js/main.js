@@ -659,10 +659,3 @@ document.getElementById("form-estadocuenta").addEventListener("submit", async (e
     mostrarEstado("estado-estadocuenta", false);
   }
 });
-  } catch (err) {
-    mostrarAlerta("alerta-estadocuenta", "Error de conexión con el servidor. Verifica que el backend esté en ejecución.");
-  } finally {
-    btn.disabled = false;
-    mostrarEstado("estado-estadocuenta", false);
-  }
-});
