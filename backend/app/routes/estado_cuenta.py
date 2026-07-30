@@ -1,136 +1,309 @@
 """
-Módulo 04 — Estado de Cuenta (versión integrada)
-=================================================
-Genera el estado de cuenta oficial de un contrato combinando tres fuentes:
+Modulo 04 - Estado de Cuenta
+============================
+Version SIN PANDAS. Lectura streaming con openpyxl read_only + values_only.
 
-  1. Reporte CRP Histórico  -> valor inicial (RP base), RP SAP1 y ADICIONES
-  2. Consolidado SECOP2      -> contratista, CC/NIT y fechas
-  3. Histórico de pagos      -> relación de pagos (opcional)
+Pico de memoria medido con archivos reales (historico 16 MB / 35.441 filas x 80 cols,
+CRP 3.8 MB, SECOP2 326 KB):  ~110 MB
+La version anterior con pandas+calamine consumia 442 MB (OOM en Render free 512 MB).
+`usecols` NO reduce la memoria con calamine: parsea toda la hoja y descarta despues.
 
-Reglas de negocio (confirmadas con el usuario):
-  - CTO Y VIG se cruza contra "No. Compromiso" por PREFIJO
-    (ej. 008-2022 agarra 008-2022, 008-20221, 008-20222 = adiciones 1, 2, ...).
-  - Se EXCLUYEN las reservas: objeto con REEMPLAZA / OBLIGACIÓN POR PAGAR /
-    CONSTITUIRSE (referencian CRP de años anteriores, no son la adición).
-  - La adición se consolida por N° Interno CRP; si tiene varias N° Posición CRP
-    se SUMAN. Cada N° Interno CRP distinto = una fila de adición.
-  - D7 (VALOR CONTRATO) = valor INICIAL (RP base), para que
-    E18 = D7 + adiciones - pago cuadre sin duplicar.
-  - Saldo RP: E(prim) = (D7 + suma adiciones) - D(prim); luego E = E_anterior - D.
-  - TOTAL (columna E de la fila TOTAL) = último saldo, en negrilla.
-  - La tabla de pagos se ajusta al número de pagos: inserta filas si sobran,
-    elimina las filas en blanco si faltan, conservando fórmulas y formato.
-
-Cualquier nombre de columna o coordenada se ajusta en la sección CONFIG.
+Reglas de negocio (verificadas contra el contrato 403-2025):
+  - CTO Y VIG cruza contra 'No. Compromiso' por prefijo (403-2025, 403-20251, ...).
+  - Se excluyen reservas (REEMPLAZA / OBLIGACION POR PAGAR / CONSTITUIRSE).
+  - Adiciones se consolidan por N Interno CRP.
+  - Cesion: doble confirmacion -> BP distinto en la adicion del CRP
+    Y 2+ BP distintos en los pagos del historico. El cruce es por BP, no por nombre
+    (el historico trunca los nombres).
+  - VALOR CESION = valor inicial CRP - suma de pagos del cedente.
+  - VALOR ADICION = valor de la fila 'Adicion y Prorroga' del cesionario.
+  - Bloque principal: FECHA FINAL = FECHA DE TERMINACION INICIAL (antes de prorroga).
+  - Bloque cesion:    FECHA FINAL = FECHA DE TERMINACION FINAL.
 """
 
 from flask import Blueprint, request, jsonify, send_file
 from flask_cors import cross_origin
-import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import Font
-import unicodedata, copy, re, os, tempfile, json
-from datetime import datetime as _dt
+from openpyxl.utils import range_boundaries
+from datetime import datetime, date, timedelta
+import unicodedata, copy, re, os, tempfile, json, traceback
 
 estado_cuenta_bp = Blueprint('estado_cuenta', __name__)
 
 # ============================ CONFIG ============================
-# --- Reporte CRP (nombres de columna) ---
 CRP_COMPROMISO   = 'No. Compromiso'
 CRP_OBJETO       = 'Objeto'
-CRP_VALOR        = 'Valor CRP'          # OJO: por nombre, no por letra (está en AK)
-CRP_INTERNO      = 'N° Interno CRP'     # por nombre, no por letra (está en AQ)
-CRP_POSICION     = 'N° Posición CRP'
+CRP_VALOR        = 'Valor CRP'
+CRP_INTERNO      = 'N° Interno CRP'
 CRP_BENEF_NOMBRE = 'Nombre BP Beneficiario'
 CRP_BENEF_DOC    = 'Número Doc. BP Beneficiario'
 CRP_BENEF_BP     = 'BP Beneficiario'
-CRP_FECHA_INI    = 'Fecha Inicial'
-CRP_FECHA_FIN    = 'Fecha Final'
 
-# --- Consolidado SECOP2 ---
-CON_CONTRATO   = 'CONTRATO'
-CON_NOMBRE     = 'NOMBRE DEL CONTRATISTA'
-CON_DOC        = 'NUMERO DE IDENTIFICACION'
-CON_VALOR_INI  = 'VALOR INICIAL DEL CONTRATO'
-CON_FECHA_INI  = 'FECHA INICIAL DE CONTRATO'
+CON_CONTRATO       = 'CONTRATO'
+CON_NOMBRE         = 'NOMBRE DEL CONTRATISTA'
+CON_DOC            = 'NUMERO DE IDENTIFICACION'
+CON_VALOR_INI      = 'VALOR INICIAL DEL CONTRATO'
+CON_FECHA_INI      = 'FECHA INICIAL DE CONTRATO'
 CON_FECHA_TERM_INI = 'FECHA DE TERMINACION INICIAL'
-CON_FECHA_FIN  = 'FECHA DE TERMINACION FINAL'
+CON_FECHA_FIN      = 'FECHA DE TERMINACION FINAL'
 
-# --- Histórico de pagos ---
 HIS_REFERENCIA = 'Referencia'
 HIS_VALOR      = 'Valor Bruto'
 HIS_PERIODO    = 'Texto cabecera documento'
 HIS_DOC        = 'Doc.compensación'
 HIS_FECHA      = 'Fecha de pago'
-HIS_PROVEEDOR  = 'Proveedor'     # codigo BP SAP en el historico
+HIS_PROVEEDOR  = 'Proveedor'
 HIS_RP         = 'Numero RP'
 HIS_CDP        = 'CDP Externo'
 HIS_CRP        = 'CRP Externo'
 HIS_NOMBRE     = 'Nombre'
-
-HIS_STATUS     = 'Estatus'      # columna BH del histórico
+HIS_STATUS     = 'Estatus'
 HIS_STATUS_OK  = 'PAGADA'
 
-# --- Coordenadas base del formato (antes de insertar adiciones) ---
-C_CTO, C_CONTRATISTA, C_CCNIT      = 'D5', 'D6', 'H6'
-C_BPSAP                            = 'H5'
-C_VALOR, C_RPSAP1                  = 'D7', 'H7'
-C_FECHA_INI, C_FECHA_FIN           = 'D8', 'H8'
-FILA_ADICION_1                     = 9      # D9 valor / H9 RP de la 1ª adición
-FILA_PAGOS_INI_BASE                = 17     # 1er pago (formato original)
-SLOTS_PAGOS_BASE                   = 12     # filas de pago que trae el formato
+CRP_COLS = {CRP_COMPROMISO, CRP_OBJETO, CRP_VALOR, CRP_INTERNO,
+            CRP_BENEF_NOMBRE, CRP_BENEF_DOC, CRP_BENEF_BP}
+HIS_COLS = {HIS_REFERENCIA, HIS_VALOR, HIS_PERIODO, HIS_DOC, HIS_FECHA,
+            HIS_PROVEEDOR, HIS_RP, HIS_CDP, HIS_CRP, HIS_NOMBRE, HIS_STATUS}
+CON_COLS = {CON_CONTRATO, CON_NOMBRE, CON_DOC, CON_VALOR_INI,
+            CON_FECHA_INI, CON_FECHA_TERM_INI, CON_FECHA_FIN}
+
+C_CTO, C_CONTRATISTA, C_CCNIT = 'D5', 'D6', 'H6'
+C_BPSAP                       = 'H5'
+C_VALOR, C_RPSAP1             = 'D7', 'H7'
+C_FECHA_INI, C_FECHA_FIN      = 'D8', 'H8'
+FILA_ADICION_1       = 9
+FILA_PAGOS_INI_BASE  = 17
+SLOTS_PAGOS_BASE     = 8      # filas de pago que trae el formato en blanco
+FMT_MONEDA           = '"$"#,##0'
 REEMPLAZO = re.compile(r'REEMPLAZA|OBLIGACION POR PAGAR|CONSTITUIRSE')
 # ===============================================================
 
 
+# --------------------------- utilidades ---------------------------
 def _sinac(s):
-    """Quita tildes/ñ y pasa a mayúsculas para comparar textos de forma robusta."""
     return ''.join(c for c in unicodedata.normalize('NFKD', str(s))
                    if not unicodedata.combining(c)).upper()
 
-
 def _es_match(nc, contrato):
-    """No. Compromiso pertenece al contrato si es igual o es <contrato><dígitos>."""
     nc = str(nc).strip()
-    if nc == contrato:
-        return True
-    return nc.startswith(contrato) and nc[len(contrato):].isdigit()
+    return nc == contrato or (nc.startswith(contrato) and nc[len(contrato):].isdigit())
+
+def _doc(v):
+    """Numero sin el .0 que deja la lectura como float."""
+    if v is None or v == '':
+        return ''
+    try:
+        return str(int(float(v)))
+    except (ValueError, TypeError):
+        return str(v).strip()
+
+def _fecha(v):
+    if v is None or v == '':
+        return None
+    if isinstance(v, datetime):
+        return v
+    if isinstance(v, date):
+        return datetime(v.year, v.month, v.day)
+    s = str(v).strip().split(' ')[0]
+    for f in ('%Y-%m-%d', '%d/%m/%Y', '%Y/%m/%d', '%d-%m-%Y'):
+        try:
+            return datetime.strptime(s, f)
+        except ValueError:
+            pass
+    return None
 
 
-def _copiar_estilo(origen, destino):
-    if origen.has_style:
-        destino.font = copy.copy(origen.font)
-        destino.fill = copy.copy(origen.fill)
-        destino.border = copy.copy(origen.border)
-        destino.alignment = copy.copy(origen.alignment)
-        destino.number_format = origen.number_format
-        destino.protection = copy.copy(origen.protection)
+# ------------------- lectura streaming (sin pandas) -------------------
+def _leer_filtrado(path, col_filtro, contrato, cols, match_exacto=False):
+    """Lee la hoja fila por fila y devuelve solo las que casan con el contrato.
+
+    read_only=True + values_only=True mantiene la memoria plana: openpyxl no
+    materializa la hoja ni crea objetos Cell.
+    """
+    wb = load_workbook(path, data_only=True, read_only=True)
+    try:
+        ws = wb.active
+        it = ws.iter_rows(values_only=True)
+        try:
+            hdr = next(it)
+        except StopIteration:
+            return []
+        idx = {}
+        for i, v in enumerate(hdr):
+            if v is None:
+                continue
+            n = str(v).strip()
+            if n in cols:
+                idx[n] = i
+        cf = idx.get(col_filtro)
+        if cf is None:
+            raise ValueError(f"No se encontró la columna '{col_filtro}' en el archivo")
+        out = []
+        for row in it:
+            if cf >= len(row):
+                continue
+            v = row[cf]
+            if v is None:
+                continue
+            s = str(v).strip()
+            ok = _es_match(s, contrato) if match_exacto else (contrato in s)
+            if ok:
+                out.append({n: (row[i] if i < len(row) else None) for n, i in idx.items()})
+        return out
+    finally:
+        wb.close()
 
 
-def _bump_formula(f, R, k):
-    """Suma k a toda referencia de fila >= R dentro de una fórmula."""
+def leer_crp(path, contrato):
+    return _leer_filtrado(path, CRP_COMPROMISO, contrato, CRP_COLS, match_exacto=True)
+
+
+def leer_pagos(path, contrato):
+    filas = _leer_filtrado(path, HIS_REFERENCIA, contrato, HIS_COLS)
+    pagos = []
+    for f in filas:
+        if str(f.get(HIS_STATUS) or '').strip().upper() != HIS_STATUS_OK:
+            continue
+        pagos.append({
+            'periodo': str(f.get(HIS_PERIODO) or ''),
+            'valor':   float(f.get(HIS_VALOR) or 0),
+            'doc':     _doc(f.get(HIS_DOC)),
+            'fecha':   _fecha(f.get(HIS_FECHA)),
+            'rp':      _doc(f.get(HIS_RP)),
+            'cdp':     _doc(f.get(HIS_CDP)),
+            'crp':     _doc(f.get(HIS_CRP)),
+            'bp':      _doc(f.get(HIS_PROVEEDOR)),
+            'nombre':  str(f.get(HIS_NOMBRE) or ''),
+        })
+    # el historico llega desordenado: ordenar por fecha de pago
+    pagos.sort(key=lambda p: p['fecha'] or datetime.max)
+    return pagos
+
+
+def leer_secop(path, contrato):
+    filas = _leer_filtrado(path, CON_CONTRATO, contrato, CON_COLS, match_exacto=True)
+    if not filas:
+        return None
+    r = filas[0]
+    return {
+        'nombre':     str(r.get(CON_NOMBRE) or ''),
+        'doc':        _doc(r.get(CON_DOC)),
+        'valor_ini':  float(r.get(CON_VALOR_INI) or 0),
+        'f_ini':      _fecha(r.get(CON_FECHA_INI)),
+        'f_term_ini': _fecha(r.get(CON_FECHA_TERM_INI)),
+        'f_fin':      _fecha(r.get(CON_FECHA_FIN)),
+    }
+
+
+# ------------------------ logica de negocio ------------------------
+def partir_crp(filas_crp):
+    """Separa base de adiciones y descarta reservas."""
+    base, adic = [], []
+    for f in filas_crp:
+        o = _sinac(f.get(CRP_OBJETO))
+        if REEMPLAZO.search(o):
+            continue
+        (adic if 'ADICION Y PRORROGA' in o else base).append(f)
+    return base, adic
+
+
+def resumen_crp(base, adic):
+    valor_ini = sum(float(f.get(CRP_VALOR) or 0) for f in base)
+    internos = {}
+    for f in base:
+        k = _doc(f.get(CRP_INTERNO))
+        internos[k] = internos.get(k, 0) + float(f.get(CRP_VALOR) or 0)
+    rp_sap1 = max(internos, key=internos.get) if internos else ''
+    ad = {}
+    for f in adic:
+        k = _doc(f.get(CRP_INTERNO))
+        ad[k] = ad.get(k, 0) + float(f.get(CRP_VALOR) or 0)
+    return {
+        'valor_ini': valor_ini,
+        'rp_sap1':   rp_sap1,
+        'adiciones': [{'interno': k, 'valor': v} for k, v in sorted(ad.items())],
+        'nombre':    str(base[0].get(CRP_BENEF_NOMBRE) or '') if base else '',
+        'doc':       _doc(base[0].get(CRP_BENEF_DOC)) if base else '',
+    }
+
+
+def detectar_cesion(base, adic, pagos, valor_ini):
+    """Doble confirmacion: BP distinto en la adicion del CRP + 2 o mas BP en los pagos."""
+    if not base:
+        return None
+    bp_base = _doc(base[0].get(CRP_BENEF_BP))
+
+    cesionarios = []
+    for f in adic:
+        bp = _doc(f.get(CRP_BENEF_BP))
+        if bp and bp != bp_base:
+            cesionarios.append({
+                'bp':            bp,
+                'nombre':        str(f.get(CRP_BENEF_NOMBRE) or ''),
+                'doc':           _doc(f.get(CRP_BENEF_DOC)),
+                'valor_adicion': float(f.get(CRP_VALOR) or 0),
+            })
+    if not cesionarios:
+        return None
+
+    por_bp = {}
+    for p in pagos:
+        if p['bp']:
+            por_bp.setdefault(p['bp'], []).append(p)
+    if len(por_bp) < 2:
+        return None
+
+    pagos_cedente = por_bp.get(bp_base, [])
+    valor_cesion = valor_ini - sum(p['valor'] for p in pagos_cedente)
+    for c in cesionarios:
+        c['pagos'] = por_bp.get(c['bp'], [])
+        c['valor_cesion'] = valor_cesion
+
+    return {
+        'bp_cedente':     bp_base,
+        'nombre_cedente': str(base[0].get(CRP_BENEF_NOMBRE) or ''),
+        'doc_cedente':    _doc(base[0].get(CRP_BENEF_DOC)),
+        'pagos_cedente':  pagos_cedente,
+        'valor_cesion':   valor_cesion,
+        'cesionarios':    cesionarios,
+    }
+
+
+# ----------------------- manipulacion del Excel -----------------------
+def _copiar_estilo(o, d):
+    if o.has_style:
+        d.font = copy.copy(o.font)
+        d.fill = copy.copy(o.fill)
+        d.border = copy.copy(o.border)
+        d.alignment = copy.copy(o.alignment)
+        d.number_format = o.number_format
+        d.protection = copy.copy(o.protection)
+
+def _bump(f, R, k):
     return re.sub(r'(\$?[A-Z]{1,3}\$?)(\d+)',
-                  lambda m: f"{m.group(1)}{int(m.group(2)) + k}" if int(m.group(2)) >= R else m.group(0),
-                  f)
-
+                  lambda m: f"{m.group(1)}{int(m.group(2)) + k}"
+                  if int(m.group(2)) >= R else m.group(0), f)
 
 def insertar_filas(ws, R, k):
-    """Inserta k filas en la posición R ajustando fórmulas, combinaciones y alturas."""
     if k <= 0:
         return
     max_row, max_col = ws.max_row, ws.max_column
     readd = []
     for mr in list(ws.merged_cells.ranges):
         if mr.min_row >= R:
-            readd.append((mr.min_row + k, mr.min_col, mr.max_row + k, mr.max_col)); ws.unmerge_cells(str(mr))
+            readd.append((mr.min_row + k, mr.min_col, mr.max_row + k, mr.max_col))
+            ws.unmerge_cells(str(mr))
         elif mr.max_row >= R:
-            readd.append((mr.min_row, mr.min_col, mr.max_row + k, mr.max_col)); ws.unmerge_cells(str(mr))
+            readd.append((mr.min_row, mr.min_col, mr.max_row + k, mr.max_col))
+            ws.unmerge_cells(str(mr))
     for row in range(max_row, R - 1, -1):
         for col in range(1, max_col + 1):
-            s = ws.cell(row=row, column=col); d = ws.cell(row=row + k, column=col)
+            s = ws.cell(row=row, column=col)
+            d = ws.cell(row=row + k, column=col)
             v = s.value
             if isinstance(v, str) and v.startswith('='):
-                v = _bump_formula(v, R, k)
+                v = _bump(v, R, k)
             d.value = v
             _copiar_estilo(s, d)
             s.value = None
@@ -140,202 +313,43 @@ def insertar_filas(ws, R, k):
         if row in ws.row_dimensions:
             ws.row_dimensions[row + k].height = ws.row_dimensions[row].height
 
-
 def eliminar_filas(ws, R, k):
-    """Elimina k filas desde R ajustando fórmulas, combinaciones y alturas."""
     if k <= 0:
         return
     max_row, max_col = ws.max_row, ws.max_column
     readd = []
     for mr in list(ws.merged_cells.ranges):
-        if mr.min_row >= R + k:              # totalmente debajo del bloque borrado
-            readd.append((mr.min_row - k, mr.min_col, mr.max_row - k, mr.max_col)); ws.unmerge_cells(str(mr))
-        elif mr.min_row >= R:                # dentro del bloque borrado -> se descarta
+        if mr.min_row >= R + k:
+            readd.append((mr.min_row - k, mr.min_col, mr.max_row - k, mr.max_col))
             ws.unmerge_cells(str(mr))
-        elif mr.max_row >= R:                # atraviesa el bloque -> se encoge
-            readd.append((mr.min_row, mr.min_col, max(mr.min_row, mr.max_row - k), mr.max_col)); ws.unmerge_cells(str(mr))
+        elif mr.min_row >= R:
+            ws.unmerge_cells(str(mr))
+        elif mr.max_row >= R:
+            readd.append((mr.min_row, mr.min_col, max(mr.min_row, mr.max_row - k), mr.max_col))
+            ws.unmerge_cells(str(mr))
 
-    def bump_down(f):
+    def down(f):
         return re.sub(r'(\$?[A-Z]{1,3}\$?)(\d+)',
-                      lambda m: f"{m.group(1)}{int(m.group(2)) - k}" if int(m.group(2)) >= R + k else m.group(0),
-                      f)
+                      lambda m: f"{m.group(1)}{int(m.group(2)) - k}"
+                      if int(m.group(2)) >= R + k else m.group(0), f)
     for row in range(R + k, max_row + 1):
         for col in range(1, max_col + 1):
-            s = ws.cell(row=row, column=col); d = ws.cell(row=row - k, column=col)
+            s = ws.cell(row=row, column=col)
+            d = ws.cell(row=row - k, column=col)
             v = s.value
             if isinstance(v, str) and v.startswith('='):
-                v = bump_down(v)
+                v = down(v)
             d.value = v
             _copiar_estilo(s, d)
-    # limpiar las últimas k filas que quedaron duplicadas al final
     for row in range(max_row - k + 1, max_row + 1):
         for col in range(1, max_col + 1):
-            c = ws.cell(row=row, column=col)
-            c.value = None
+            ws.cell(row=row, column=col).value = None
     for (r1, c1, r2, c2) in readd:
         ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
 
 
-def _extraer_datos_crp(df_crp, contrato):
-    """Devuelve dict con base (valor inicial + RP) y lista de adiciones consolidadas."""
-    df = df_crp.copy()
-    df['_nc'] = df[CRP_COMPROMISO].astype(str).str.strip()
-    df['_obj'] = df[CRP_OBJETO].map(_sinac)
-    df = df[df['_nc'].apply(lambda x: _es_match(x, contrato))]
-
-    es_reserva = df['_obj'].str.contains(REEMPLAZO, na=False)
-    es_adicion = df['_obj'].str.contains('ADICION Y PRORROGA', na=False)
-    df = df[~es_reserva]                       # fuera reservas siempre
-
-    base = df[~es_adicion.reindex(df.index, fill_value=False)]
-    adic = df[es_adicion.reindex(df.index, fill_value=False)]
-
-    # Valor inicial (RP base) y RP SAP1 (interno base principal)
-    valor_inicial, rp_sap1 = 0.0, ''
-    if not base.empty:
-        valor_inicial = float(base[CRP_VALOR].fillna(0).sum())
-        por_interno = base.groupby(CRP_INTERNO)[CRP_VALOR].sum()
-        if not por_interno.empty:
-            rp_sap1 = int(por_interno.idxmax())
-
-    # Adiciones: una fila por N° Interno CRP, sumando posiciones
-    adiciones = []
-    if not adic.empty:
-        for interno, g in adic.groupby(CRP_INTERNO, sort=True):
-            adiciones.append({'valor': float(g[CRP_VALOR].fillna(0).sum()),
-                              'interno': int(interno)})
-
-    # Nombre/CC de respaldo desde el CRP (por si no hay consolidado)
-    nombre = doc = ''
-    if not df.empty:
-        n = df[CRP_BENEF_NOMBRE].dropna()
-        d = df[CRP_BENEF_DOC].dropna()
-        if len(n): nombre = str(n.iloc[0])
-        if len(d): doc = str(d.iloc[0])
-
-    return {'valor_inicial': valor_inicial, 'rp_sap1': rp_sap1,
-            'adiciones': adiciones, 'nombre_crp': nombre, 'doc_crp': doc}
-
-
-def _extraer_datos_consolidado(df_con, contrato):
-    df = df_con.copy()
-    df[CON_CONTRATO] = df[CON_CONTRATO].astype(str).str.strip()
-    fila = df[df[CON_CONTRATO] == contrato]
-    if fila.empty:
-        return None
-    r = fila.iloc[0]
-    def _fecha(v):
-        try:
-            return pd.to_datetime(v).to_pydatetime()
-        except Exception:
-            return None
-    return {
-        'nombre': None if pd.isna(r.get(CON_NOMBRE)) else str(r.get(CON_NOMBRE)),
-        'doc':    None if pd.isna(r.get(CON_DOC)) else str(r.get(CON_DOC)),
-        'valor_inicial': None if pd.isna(r.get(CON_VALOR_INI)) else float(r.get(CON_VALOR_INI)),
-        'fecha_ini': _fecha(r.get(CON_FECHA_INI)),
-        'fecha_term_ini': _fecha(r.get(CON_FECHA_TERM_INI)),
-        'fecha_fin': _fecha(r.get(CON_FECHA_FIN)),
-    }
-
-def _fmt_doc(v):
-    """Numero de documento sin el .0 que deja pandas al leerlo como float."""
-    if pd.isna(v):
-        return ''
-    try:
-        return str(int(float(v)))
-    except (ValueError, TypeError):
-        return str(v).strip()
-
-
-def _fmt_fecha(v):
-    """Fecha sin la hora 00:00:00."""
-    if pd.isna(v):
-        return ''
-    try:
-        return pd.to_datetime(v).strftime('%Y-%m-%d')
-    except (ValueError, TypeError):
-        return str(v).split(' ')[0]
-
-def _fecha_key(v):
-    if v is None or v == '':
-        return _dt.max
-    if isinstance(v, _dt):
-        return v
-    s = str(v).strip().split('.')[0]
-    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%d/%m/%Y', '%d/%m/%Y %H:%M:%S'):
-        try:
-            return _dt.strptime(s, fmt)
-        except Exception:
-            pass
-    return _dt.max
-
-
-def _detectar_cesion(df_crp, contrato, pagos, valor_inicial):
-    """Detecta cesión con doble confirmación en CRP e histórico."""
-    df = df_crp.copy()
-    df['_nc'] = df[CRP_COMPROMISO].astype(str).str.strip()
-    df['_obj'] = df[CRP_OBJETO].map(_sinac)
-    df = df[df['_nc'].apply(lambda x: _es_match(x, contrato))]
-    df = df[~df['_obj'].str.contains(REEMPLAZO, na=False)]
-    if df.empty:
-        return None
-
-    es_ad = df['_obj'].str.contains('ADICION Y PRORROGA', na=False)
-    base = df[~es_ad]
-    adic = df[es_ad]
-    if base.empty:
-        return None
-
-    bp_base = str(base.iloc[0][CRP_BENEF_BP]).split('.')[0]
-    nombre_cedente = str(base.iloc[0][CRP_BENEF_NOMBRE])
-    doc_cedente = _fmt_doc(base.iloc[0][CRP_BENEF_DOC])
-
-    ces_crp = []
-    for _, r in adic.iterrows():
-        bp_ad = str(r[CRP_BENEF_BP]).split('.')[0]
-        if bp_ad and bp_ad != bp_base:
-            ces_crp.append({
-                'bp': bp_ad,
-                'nombre': str(r[CRP_BENEF_NOMBRE]),
-                'doc': _fmt_doc(r[CRP_BENEF_DOC]),
-                'valor_adicion': float(r[CRP_VALOR] or 0),
-            })
-    if not ces_crp:
-        return None
-
-    por_bp = {}
-    for p in pagos:
-        bp = str(p.get('bp_sap', '')).split('.')[0]
-        if bp:
-            por_bp.setdefault(bp, []).append(p)
-    if len(por_bp) < 2:
-        return None
-
-    for bp in por_bp:
-        por_bp[bp].sort(key=lambda p: _fecha_key(p.get('fecha')))
-
-    pagos_cedente = por_bp.get(bp_base, [])
-    total_cedente = sum(float(p.get('valor', 0) or 0) for p in pagos_cedente)
-    valor_cesion = valor_inicial - total_cedente
-
-    cesionarios = []
-    for c in ces_crp:
-        cesionarios.append({**c, 'pagos': por_bp.get(c['bp'], []),
-                            'valor_cesion': valor_cesion})
-
-    return {
-        'bp_cedente': bp_base,
-        'nombre_cedente': nombre_cedente,
-        'doc_cedente': doc_cedente,
-        'pagos_cedente': pagos_cedente,
-        'valor_cesion': valor_cesion,
-        'cesionarios': cesionarios,
-    }
-
-
-def _cs_merge_map(ws):
-    from openpyxl.utils import range_boundaries
+def _merge_map(ws):
+    """(fila, col) -> celda ancla, para escribir dentro de rangos combinados."""
     m = {}
     for mr in ws.merged_cells.ranges:
         c1, r1, c2, r2 = range_boundaries(mr.coord)
@@ -344,27 +358,23 @@ def _cs_merge_map(ws):
                 m[(r, c)] = (r1, c1)
     return m
 
-
-def _cs_wrc(ws, row, col, val, fmt=False, m=None):
-    if m is None:
-        m = _cs_merge_map(ws)
-    d = m.get((row, col), (row, col))
-    cel = ws.cell(row=d[0], column=d[1])
+def _wrc(ws, row, col, val, m, fmt=None):
+    r, c = m.get((row, col), (row, col))
+    cel = ws.cell(row=r, column=c)
     cel.value = val
     if fmt:
-        cel.number_format = '"$"#,##0'
+        cel.number_format = fmt
 
-
-def _cs_desmerge(ws, fila, c1=2, c2=10):
-    from openpyxl.utils import range_boundaries
+def _desmerge(ws, fila, c1=2, c2=10):
     for mr in list(ws.merged_cells.ranges):
         mc1, mr1, mc2, mr2 = range_boundaries(mr.coord)
         if mr1 <= fila <= mr2 and mc1 <= c2 and mc2 >= c1:
             ws.unmerge_cells(mr.coord)
 
-
-def _cs_buscar(ws, texto, col=3, desde=26, hasta=70):
+def _buscar(ws, texto, col=3, desde=1, hasta=None):
+    """Localiza un rotulo por texto: robusto ante desplazamiento por adiciones."""
     t = texto.strip().upper()
+    hasta = hasta or ws.max_row
     for r in range(desde, hasta + 1):
         v = ws.cell(row=r, column=col).value
         if v and t in str(v).strip().upper():
@@ -372,160 +382,147 @@ def _cs_buscar(ws, texto, col=3, desde=26, hasta=70):
     return None
 
 
-def llenar_cesiones(ws, ces, secop, fmt_valor='"$"#,##0'):
-    """Llena sección CESIÓN del Excel."""
+def llenar_cesion(ws, ces, f_ini_ces, f_fin_ces, fila_desde):
+    """Llena el bloque CESION. Devuelve True si escribio algo."""
     if not ces or not ces['cesionarios']:
-        return
-
-    m = _cs_merge_map(ws)
+        return False
     c1 = ces['cesionarios'][0]
 
-    f_cto = _cs_buscar(ws, 'CTO Y VIG', col=3, desde=26, hasta=70)
+    f_ces = _buscar(ws, 'CESIÓN', col=2, desde=fila_desde) or \
+            _buscar(ws, 'CESION', col=2, desde=fila_desde)
+    if not f_ces:
+        return False
+    f_cto = _buscar(ws, 'CTO Y VIG', col=3, desde=f_ces)
     if not f_cto:
-        return
+        return False
 
-    _cs_wrc(ws, f_cto, 4, ces.get('contrato', ''), m=m)
-    _cs_wrc(ws, f_cto, 8, c1['bp'], m=m)
-    _cs_wrc(ws, f_cto + 1, 4, c1['nombre'], m=m)
-    _cs_wrc(ws, f_cto + 1, 8, c1['doc'], m=m)
-    _cs_wrc(ws, f_cto + 2, 4, c1['valor_cesion'], fmt=True, m=m)
-    rp = c1['pagos'][0]['rp'] if c1['pagos'] else ''
-    _cs_wrc(ws, f_cto + 2, 8, rp, m=m)
-    _cs_wrc(ws, f_cto + 3, 4, secop.get('fecha_ini', ''), m=m)
-    _cs_wrc(ws, f_cto + 3, 8, secop.get('fecha_fin', ''), m=m)
-    _cs_wrc(ws, f_cto + 4, 4, c1['valor_adicion'], fmt=True, m=m)
+    m = _merge_map(ws)
+    _wrc(ws, f_cto,     4, ces.get('contrato', ''), m)
+    _wrc(ws, f_cto,     8, c1['bp'], m, 'General')
+    _wrc(ws, f_cto + 1, 4, c1['nombre'], m)
+    _wrc(ws, f_cto + 1, 8, c1['doc'], m, 'General')
+    _wrc(ws, f_cto + 2, 4, c1['valor_cesion'], m, FMT_MONEDA)
+    _wrc(ws, f_cto + 2, 8, c1['pagos'][0]['rp'] if c1['pagos'] else '', m, 'General')
+    if f_ini_ces:
+        _wrc(ws, f_cto + 3, 4, f_ini_ces, m, 'DD/MM/YYYY')
+    if f_fin_ces:
+        _wrc(ws, f_cto + 3, 8, f_fin_ces, m, 'DD/MM/YYYY')
+    _wrc(ws, f_cto + 4, 4, c1['valor_adicion'], m, FMT_MONEDA)
 
-    f_hdr = None
-    for r in range(f_cto + 4, f_cto + 15):
-        v = ws.cell(row=r, column=3).value
-        if v and 'PERIODO' in str(v).upper():
-            f_hdr = r
-            break
+    f_hdr = _buscar(ws, 'PERIODO', col=3, desde=f_cto + 4)
     if not f_hdr:
-        return
+        return False
     f_pago = f_hdr + 1
 
-    for i in range(len(c1['pagos']) + 2):
-        _cs_desmerge(ws, f_pago + i)
+    f_total = _buscar(ws, 'TOTAL', col=2, desde=f_pago) or (f_pago + 5)
+    slots = f_total - f_pago
+    n = len(c1['pagos'])
+    if n > slots:
+        insertar_filas(ws, f_pago + slots, n - slots)
+    elif 0 < n < slots:
+        eliminar_filas(ws, f_pago + n, slots - n)
+    f_total = f_pago + max(n, slots if n == 0 else n)
 
-    saldo = c1['valor_cesion'] + c1['valor_adicion']
-    r = f_pago
-    for i, p in enumerate(c1['pagos'], start=1):
-        saldo -= p['valor']
-        _cs_wrc(ws, r, 2, i, m=m)
-        _cs_wrc(ws, r, 3, p['periodo'], m=m)
-        _cs_wrc(ws, r, 4, p['valor'], fmt=True, m=m)
-        _cs_wrc(ws, r, 5, saldo, fmt=True, m=m)
-        _cs_wrc(ws, r, 6, p['doc'], m=m)
-        _cs_wrc(ws, r, 7, p['fecha'], m=m)
-        _cs_wrc(ws, r, 8, p['rp'], m=m)
-        _cs_wrc(ws, r, 9, p['cdp'], m=m)
-        _cs_wrc(ws, r, 10, p['crp'], m=m)
-        r += 1
+    m = _merge_map(ws)
+    for i in range(max(n, 1)):
+        _desmerge(ws, f_pago + i)
+    m = _merge_map(ws)
+
+    fmt = ws.cell(row=f_pago, column=4).number_format or FMT_MONEDA
+    for i, p in enumerate(c1['pagos']):
+        r = f_pago + i
+        _wrc(ws, r,  2, i + 1, m)
+        _wrc(ws, r,  3, p['periodo'], m)
+        _wrc(ws, r,  4, p['valor'], m, fmt)
+        if i == 0:
+            ws.cell(row=r, column=5).value = f"=(D{f_cto + 2}+D{f_cto + 4})-D{r}"
+        else:
+            ws.cell(row=r, column=5).value = f"=E{r - 1}-D{r}"
+        ws.cell(row=r, column=5).number_format = fmt
+        _wrc(ws, r,  6, p['doc'], m, 'General')
+        if p['fecha']:
+            _wrc(ws, r, 7, p['fecha'], m, 'DD/MM/YYYY')
+        _wrc(ws, r,  8, p['rp'], m, 'General')
+        _wrc(ws, r,  9, p['cdp'], m, 'General')
+        _wrc(ws, r, 10, p['crp'], m, 'General')
+
+    if n:
+        ult = f_pago + n - 1
+        ws.cell(row=f_total, column=4).value = f"=SUM(D{f_pago}:D{ult})"
+        ws.cell(row=f_total, column=4).number_format = fmt
+        cel = ws.cell(row=f_total, column=5)
+        cel.value = f"=E{ult}"
+        cel.number_format = fmt
+        cel.font = Font(name=cel.font.name, size=cel.font.size, bold=True)
+    return True
 
 
-def _extraer_pagos(df_his, contrato):
-    if df_his is None:
-        return []
-    df = df_his[df_his[HIS_REFERENCIA].astype(str).str.contains(contrato, na=False, regex=False)]
-
-    if HIS_STATUS in df.columns:
-        df = df[df[HIS_STATUS].astype(str).str.strip().str.upper() == HIS_STATUS_OK]
-    pagos = []
-
-    for _, p in df.iterrows():
-        pagos.append({
-            'periodo': '' if pd.isna(p.get(HIS_PERIODO)) else str(p.get(HIS_PERIODO)),
-            'valor':   float(p.get(HIS_VALOR, 0) or 0),
-            'doc':     _fmt_doc(p.get(HIS_DOC)),
-            'fecha':   _fmt_fecha(p.get(HIS_FECHA)),
-            'rp':      '' if pd.isna(p.get(HIS_RP)) else str(p.get(HIS_RP)),
-            'cdp':     _fmt_doc(p.get(HIS_CDP)),
-            'crp':     _fmt_doc(p.get(HIS_CRP)),
-            'bp_sap':  _fmt_doc(p.get(HIS_PROVEEDOR)),
-            'nombre':  '' if pd.isna(p.get(HIS_NOMBRE)) else str(p.get(HIS_NOMBRE)),
-        })
-    return pagos
-
-
+# --------------------------- orquestacion ---------------------------
 def generar_estado_cuenta(plantilla_path, crp_path, consolidado_path,
                           historico_path, contrato, salida_path):
-    """Genera el estado de cuenta completo. Devuelve dict de resumen."""
     contrato = str(contrato).strip()
 
-    df_crp = pd.read_excel(crp_path, sheet_name=0, engine="calamine")
-    df_con = pd.read_excel(consolidado_path, sheet_name=0, engine="calamine") if consolidado_path else None
-    _cols_his = [HIS_REFERENCIA, HIS_VALOR, HIS_PERIODO, HIS_DOC,
-                 HIS_FECHA, HIS_RP, HIS_CDP, HIS_CRP, HIS_STATUS, HIS_PROVEEDOR, HIS_NOMBRE]
-    # Mapa canonico: nombre normalizado (minusculas, sin espacios extra) -> nombre oficial
-    _canon = {c.strip().lower(): c for c in _cols_his}
-    def _quiere_col(c):
-        return c.strip().lower() in _canon
-    if historico_path:
-        df_his = pd.read_excel(historico_path, sheet_name=0,
-                               usecols=_quiere_col,
-                               engine="calamine")
-        # Renombrar a la forma oficial por si venian con otra capitalizacion
-        df_his = df_his.rename(columns={c: _canon[c.strip().lower()]
-                                        for c in df_his.columns
-                                        if c.strip().lower() in _canon})
+    filas_crp = leer_crp(crp_path, contrato) if crp_path else []
+    pagos     = leer_pagos(historico_path, contrato) if historico_path else []
+    sec       = leer_secop(consolidado_path, contrato) if consolidado_path else None
+
+    base, adic = partir_crp(filas_crp)
+    crp = resumen_crp(base, adic)
+
+    if crp['valor_ini'] == 0 and not crp['adiciones'] and sec is None:
+        return {'ok': False,
+                'mensaje': f'No se encontró información para el contrato {contrato}'}
+
+    valor_ini = crp['valor_ini'] or (sec['valor_ini'] if sec else 0.0)
+    ces = detectar_cesion(base, adic, pagos, valor_ini)
+
+    if ces:
+        pagos_principal = ces['pagos_cedente']
+        nombre = ces['nombre_cedente'] or (sec['nombre'] if sec else '') or crp['nombre']
+        doc    = ces['doc_cedente']    or (sec['doc'] if sec else '')    or crp['doc']
+        # el bloque principal cierra en la terminacion INICIAL (antes de prorroga)
+        fecha_fin = (sec.get('f_term_ini') if sec else None) or (sec.get('f_fin') if sec else None)
+        f_fin_ces = sec.get('f_fin') if sec else None
+        f_ini_ces = (fecha_fin + timedelta(days=1)) if fecha_fin else None
     else:
-        df_his = None
+        pagos_principal = pagos
+        nombre = (sec['nombre'] if sec else '') or crp['nombre']
+        doc    = (sec['doc'] if sec else '')    or crp['doc']
+        fecha_fin = sec.get('f_fin') if sec else None
+        f_ini_ces = f_fin_ces = None
 
-    crp = _extraer_datos_crp(df_crp, contrato)
-    con = _extraer_datos_consolidado(df_con, contrato) if df_con is not None else None
-    pagos = _extraer_pagos(df_his, contrato)
-
-    # --- Detección de cesión ---
-    cesion = _detectar_cesion(df_crp, contrato, pagos, crp['valor_inicial'])
-    if cesion:
-        cesion['contrato'] = contrato
-        pagos = cesion['pagos_cedente']
-        nombre_cedente = cesion['nombre_cedente']
-        doc_cedente = cesion['doc_cedente']
-        if con and con.get('fecha_term_ini'):
-            fecha_fin = con['fecha_term_ini']
-        else:
-            fecha_fin = con['fecha_fin'] if con else None
-    else:
-        nombre_cedente = None
-        doc_cedente = None
-        cesion = None
-
-    if crp['valor_inicial'] == 0 and not crp['adiciones'] and con is None:
-        return {'ok': False, 'mensaje': f'No se encontró información para el contrato {contrato}'}
-
-    # Fuentes finales (consolidado con prioridad; CRP de respaldo)
-    nombre = nombre_cedente or (con and con['nombre']) or crp['nombre_crp'] or ''
-    doc    = doc_cedente or (con and con['doc'])    or crp['doc_crp'] or ''
-    valor_inicial = crp['valor_inicial'] or (con and con['valor_inicial']) or 0.0
-    fecha_ini = con['fecha_ini'] if con else None
-    if not cesion:
-        fecha_fin = con['fecha_fin'] if con else None
+    fecha_ini = sec.get('f_ini') if sec else None
     adiciones = crp['adiciones']
     n_ad = len(adiciones)
-    bp_sap = pagos[0]['bp_sap'] if pagos else ''
+    bp_sap = pagos_principal[0]['bp'] if pagos_principal else ''
 
     wb = load_workbook(plantilla_path)
     ws = wb.active
 
-    # ---------- Cabecera ----------
+    # cabecera
     ws[C_CTO] = contrato
     ws[C_CONTRATISTA] = nombre
     ws[C_CCNIT] = doc
+    ws[C_CCNIT].number_format = 'General'
     if bp_sap:
-        ws[C_BPSAP] = bp_sap; ws[C_BPSAP].number_format = 'General'
-    ws[C_VALOR] = valor_inicial
-    if crp['rp_sap1'] != '':
-        ws[C_RPSAP1] = crp['rp_sap1']; ws[C_RPSAP1].number_format = 'General'
-    if fecha_ini is not None:
-        ws[C_FECHA_INI] = fecha_ini; ws[C_FECHA_INI].number_format = 'DD/MM/YYYY'
-    if fecha_fin is not None:
-        ws[C_FECHA_FIN] = fecha_fin; ws[C_FECHA_FIN].number_format = 'DD/MM/YYYY'
+        ws[C_BPSAP] = bp_sap
+        ws[C_BPSAP].number_format = 'General'
+    ws[C_VALOR] = valor_ini
+    ws[C_VALOR].number_format = FMT_MONEDA
+    if crp['rp_sap1']:
+        ws[C_RPSAP1] = crp['rp_sap1']
+        ws[C_RPSAP1].number_format = 'General'
+    if fecha_ini:
+        ws[C_FECHA_INI] = fecha_ini
+        ws[C_FECHA_INI].number_format = 'DD/MM/YYYY'
+    if fecha_fin:
+        ws[C_FECHA_FIN] = fecha_fin
+        ws[C_FECHA_FIN].number_format = 'DD/MM/YYYY'
 
-    # ---------- Adiciones ----------
+    # adiciones
     if n_ad >= 1:
         ws[f'D{FILA_ADICION_1}'] = adiciones[0]['valor']
+        ws[f'D{FILA_ADICION_1}'].number_format = FMT_MONEDA
         ws[f'H{FILA_ADICION_1}'] = adiciones[0]['interno']
         ws[f'H{FILA_ADICION_1}'].number_format = 'General'
     extra = adiciones[1:]
@@ -533,107 +530,114 @@ def generar_estado_cuenta(plantilla_path, crp_path, consolidado_path,
         insertar_filas(ws, FILA_ADICION_1 + 1, len(extra))
         for i, ad in enumerate(extra):
             r = FILA_ADICION_1 + 1 + i
-            for cc in ['C', 'D', 'G', 'H']:
+            for cc in ('C', 'D', 'G', 'H'):
                 _copiar_estilo(ws[f'{cc}{FILA_ADICION_1}'], ws[f'{cc}{r}'])
             ws[f'C{r}'] = f'VALOR ADICIÓN {i + 2}'
             ws[f'D{r}'] = ad['valor']
+            ws[f'D{r}'].number_format = FMT_MONEDA
             ws[f'G{r}'] = f'RP ADICIÓN {i + 2}'
-            ws[f'H{r}'] = ad['interno']; ws[f'H{r}'].number_format = 'General'
+            ws[f'H{r}'] = ad['interno']
+            ws[f'H{r}'].number_format = 'General'
 
-    # Desplazamiento provocado por adiciones extra
     k_ad = len(extra)
-    pago_ini   = FILA_PAGOS_INI_BASE + k_ad
-    total_row0 = FILA_PAGOS_INI_BASE + SLOTS_PAGOS_BASE + k_ad   # fila TOTAL con 12 slots
+    # localizar la tabla de pagos por rotulo (robusto ante el desplazamiento)
+    f_hdr = _buscar(ws, 'PERIODO', col=3, desde=FILA_ADICION_1 + k_ad,
+                    hasta=FILA_PAGOS_INI_BASE + k_ad + 10)
+    pago_ini = (f_hdr + 1) if f_hdr else (FILA_PAGOS_INI_BASE + k_ad)
+    f_tot = _buscar(ws, 'TOTAL', col=2, desde=pago_ini)
+    slots = (f_tot - pago_ini) if f_tot else SLOTS_PAGOS_BASE
 
-    # ---------- Ajuste de filas de pago ----------
-    n_pagos = len(pagos)
-    if n_pagos > SLOTS_PAGOS_BASE:
-        insertar_filas(ws, pago_ini + SLOTS_PAGOS_BASE, n_pagos - SLOTS_PAGOS_BASE)
-    elif 0 < n_pagos < SLOTS_PAGOS_BASE:
-        eliminar_filas(ws, pago_ini + n_pagos, SLOTS_PAGOS_BASE - n_pagos)
-
-    filas_pago = max(n_pagos, SLOTS_PAGOS_BASE if n_pagos == 0 else n_pagos)
+    n_pagos = len(pagos_principal)
+    if n_pagos > slots:
+        insertar_filas(ws, pago_ini + slots, n_pagos - slots)
+    elif 0 < n_pagos < slots:
+        eliminar_filas(ws, pago_ini + n_pagos, slots - n_pagos)
+    filas_pago = max(n_pagos, slots if n_pagos == 0 else n_pagos)
     total_row = pago_ini + filas_pago
 
-    # Base para el saldo: D7 + bloque de adiciones (D9:D(8+n_ad))
-    if n_ad >= 1:
-        base_saldo = f"{C_VALOR}+SUM(D{FILA_ADICION_1}:D{FILA_ADICION_1 + n_ad - 1})"
-    else:
-        base_saldo = C_VALOR
+    base_saldo = (f"{C_VALOR}+SUM(D{FILA_ADICION_1}:D{FILA_ADICION_1 + n_ad - 1})"
+                  if n_ad >= 1 else C_VALOR)
+    fmt = ws.cell(row=pago_ini, column=4).number_format or FMT_MONEDA
 
-    fmt_valor = ws[f'D{pago_ini}'].number_format
-
-    # ---------- Relación de pagos ----------
     for i in range(filas_pago):
         r = pago_ini + i
         if i < n_pagos:
-            p = pagos[i]
-            ws[f'B{r}'] = i + 1
-            ws[f'C{r}'] = p['periodo']
-            ws[f'D{r}'] = p['valor']
-            ws[f'F{r}'] = p['doc']
-            ws[f'G{r}'] = p['fecha']
-            ws[f'H{r}'] = p['rp']
-            ws[f'I{r}'] = p['cdp']
-            ws[f'J{r}'] = p['crp']
-        # Saldo RP (fórmula viva) para todas las filas de pago
-        if i == 0:
-            ws[f'E{r}'] = f"={base_saldo}-D{r}"
-        else:
-            ws[f'E{r}'] = f"=E{r - 1}-D{r}"
-        ws[f'E{r}'].number_format = fmt_valor
+            p = pagos_principal[i]
+            ws.cell(row=r, column=2).value = i + 1
+            ws.cell(row=r, column=3).value = p['periodo']
+            ws.cell(row=r, column=4).value = p['valor']
+            ws.cell(row=r, column=4).number_format = fmt
+            ws.cell(row=r, column=6).value = p['doc']
+            if p['fecha']:
+                ws.cell(row=r, column=7).value = p['fecha']
+                ws.cell(row=r, column=7).number_format = 'DD/MM/YYYY'
+            ws.cell(row=r, column=8).value = p['rp']
+            ws.cell(row=r, column=9).value = p['cdp']
+            ws.cell(row=r, column=10).value = p['crp']
+        ws.cell(row=r, column=5).value = (f"={base_saldo}-D{r}" if i == 0
+                                          else f"=E{r - 1}-D{r}")
+        ws.cell(row=r, column=5).number_format = fmt
 
-    # ---------- Fila TOTAL ----------
     ult = total_row - 1
-    ws[f'D{total_row}'] = f"=SUM(D{pago_ini}:D{ult})"
-    ws[f'D{total_row}'].number_format = fmt_valor
-    ws[f'E{total_row}'] = f"=E{ult}"
-    f = ws[f'E{total_row}'].font
-    ws[f'E{total_row}'].font = Font(name=f.name, size=f.size, bold=True)
-    ws[f'E{total_row}'].number_format = fmt_valor
+    ws.cell(row=total_row, column=4).value = f"=SUM(D{pago_ini}:D{ult})"
+    ws.cell(row=total_row, column=4).number_format = fmt
+    cel = ws.cell(row=total_row, column=5)
+    cel.value = f"=E{ult}"
+    cel.number_format = fmt
+    cel.font = Font(name=cel.font.name, size=cel.font.size, bold=True)
 
-    # --- Secciones de cesión ---
-    if cesion:
-        f_ini = con['fecha_ini'].strftime('%Y-%m-%d') if (con and con.get('fecha_ini')) else ''
-        f_fin = con['fecha_fin'].strftime('%Y-%m-%d') if (con and con.get('fecha_fin')) else ''
-        secop_datos = {'contrato': contrato, 'fecha_ini': f_ini, 'fecha_fin': f_fin}
-        llenar_cesiones(ws, cesion, secop_datos)
+    hay_cesion = False
+    if ces:
+        ces['contrato'] = contrato
+        hay_cesion = llenar_cesion(ws, ces, f_ini_ces, f_fin_ces, total_row)
 
     wb.save(salida_path)
-    return {'ok': True, 'contrato': contrato, 'contratista': nombre,
-            'valor_inicial': valor_inicial, 'n_adiciones': n_ad,
-            'n_pagos': n_pagos, 'valor_final': valor_inicial + sum(a['valor'] for a in adiciones)}
+
+    res = {'ok': True, 'contrato': contrato, 'contratista': nombre,
+           'valor_inicial': valor_ini, 'n_adiciones': n_ad, 'n_pagos': n_pagos,
+           'cesion': hay_cesion,
+           'valor_final': valor_ini + sum(a['valor'] for a in adiciones)}
+    if ces:
+        res['cesionario'] = ces['cesionarios'][0]['nombre']
+        res['valor_cesion'] = ces['valor_cesion']
+        res['n_pagos_cesion'] = len(ces['cesionarios'][0]['pagos'])
+    return res
 
 
 # ============================ ENDPOINTS ============================
 @estado_cuenta_bp.route('/procesar', methods=['POST'])
 @cross_origin()
 def procesar():
+    tmp = None
     try:
-        plantilla    = request.files.get('plantilla')
-        reporte_crp  = request.files.get('reporte_crp')
-        consolidado  = request.files.get('consolidado')
-        historico    = request.files.get('historico')
-        contrato     = (request.form.get('contrato') or '').strip()
+        plantilla   = request.files.get('plantilla')
+        reporte_crp = request.files.get('reporte_crp')
+        consolidado = request.files.get('consolidado')   # opcional
+        historico   = request.files.get('historico')     # opcional
+        contrato    = (request.form.get('contrato') or '').strip()
 
-        if not plantilla or not reporte_crp or not consolidado or not historico or not contrato:
-            return jsonify({"ok": False,
-                            "mensaje": "Faltan datos: se requieren plantilla, reporte_crp, consolidado, histórico y contrato"}), 400
+        if not plantilla or not reporte_crp or not contrato:
+            return jsonify({'ok': False,
+                            'mensaje': 'Faltan datos: se requieren plantilla, reporte_crp y contrato'}), 400
 
         tmp = tempfile.mkdtemp()
-        p_plantilla = os.path.join(tmp, 'plantilla.xlsx');   plantilla.save(p_plantilla)
-        p_crp       = os.path.join(tmp, 'crp.xlsx');          reporte_crp.save(p_crp)
-        p_con = os.path.join(tmp, 'consolidado.xlsx');        consolidado.save(p_con)
-        p_his = os.path.join(tmp, 'historico.xlsx');          historico.save(p_his)
+        p_pl = os.path.join(tmp, 'plantilla.xlsx');   plantilla.save(p_pl)
+        p_crp = os.path.join(tmp, 'crp.xlsx');        reporte_crp.save(p_crp)
+        p_con = p_his = None
+        if consolidado:
+            p_con = os.path.join(tmp, 'consolidado.xlsx'); consolidado.save(p_con)
+        if historico:
+            p_his = os.path.join(tmp, 'historico.xlsx');   historico.save(p_his)
 
         salida = os.path.join(tmp, f'Estado_de_Cuenta_{contrato}.xlsx')
-        res = generar_estado_cuenta(p_plantilla, p_crp, p_con, p_his, contrato, salida)
+        res = generar_estado_cuenta(p_pl, p_crp, p_con, p_his, contrato, salida)
         if not res.get('ok'):
             return jsonify(res), 400
         return send_file(salida, as_attachment=True,
                          download_name=f'Estado_de_Cuenta_{contrato}.xlsx')
     except Exception as e:
-        return jsonify({"ok": False, "mensaje": str(e)}), 500
+        traceback.print_exc()
+        return jsonify({'ok': False, 'mensaje': str(e)}), 500
 
 
 @estado_cuenta_bp.route('/procesar-lite', methods=['POST'])
@@ -648,16 +652,17 @@ def procesar_lite():
         contrato = (request.form.get('contrato') or '').strip()
         pagos_raw = request.form.get('pagos')
         if not plantilla or not contrato or not pagos_raw:
-            return jsonify({"ok": False, "mensaje": "Faltan datos"}), 400
+            return jsonify({'ok': False, 'mensaje': 'Faltan datos'}), 400
         pagos = json.loads(pagos_raw)
-        tmp_dir = tempfile.mkdtemp()
-        ruta_plantilla = os.path.join(tmp_dir, 'plantilla.xlsx')
-        plantilla.save(ruta_plantilla)
-        ruta_salida = os.path.join(tmp_dir, 'Estado_de_Cuenta_' + contrato + '.xlsx')
-        resultado = generar_estado_cuenta_desde_datos(ruta_plantilla, pagos, contrato, ruta_salida)
-        if not resultado.get('ok'):
-            return jsonify(resultado), 400
-        return send_file(ruta_salida, as_attachment=True,
-                         download_name='Estado_de_Cuenta_' + contrato + '.xlsx')
+        tmp = tempfile.mkdtemp()
+        p_pl = os.path.join(tmp, 'plantilla.xlsx')
+        plantilla.save(p_pl)
+        salida = os.path.join(tmp, f'Estado_de_Cuenta_{contrato}.xlsx')
+        r = generar_estado_cuenta_desde_datos(p_pl, pagos, contrato, salida)
+        if not r.get('ok'):
+            return jsonify(r), 400
+        return send_file(salida, as_attachment=True,
+                         download_name=f'Estado_de_Cuenta_{contrato}.xlsx')
     except Exception as e:
-        return jsonify({"ok": False, "mensaje": str(e)}), 500
+        traceback.print_exc()
+        return jsonify({'ok': False, 'mensaje': str(e)}), 500
