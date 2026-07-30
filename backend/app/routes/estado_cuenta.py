@@ -30,6 +30,7 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import Font
 import unicodedata, copy, re, os, tempfile, json
+from datetime import datetime as _dt
 
 estado_cuenta_bp = Blueprint('estado_cuenta', __name__)
 
@@ -42,6 +43,7 @@ CRP_INTERNO      = 'N° Interno CRP'     # por nombre, no por letra (está en AQ
 CRP_POSICION     = 'N° Posición CRP'
 CRP_BENEF_NOMBRE = 'Nombre BP Beneficiario'
 CRP_BENEF_DOC    = 'Número Doc. BP Beneficiario'
+CRP_BENEF_BP     = 'BP Beneficiario'
 CRP_FECHA_INI    = 'Fecha Inicial'
 CRP_FECHA_FIN    = 'Fecha Final'
 
@@ -51,6 +53,7 @@ CON_NOMBRE     = 'NOMBRE DEL CONTRATISTA'
 CON_DOC        = 'NUMERO DE IDENTIFICACION'
 CON_VALOR_INI  = 'VALOR INICIAL DEL CONTRATO'
 CON_FECHA_INI  = 'FECHA INICIAL DE CONTRATO'
+CON_FECHA_TERM_INI = 'FECHA DE TERMINACION INICIAL'
 CON_FECHA_FIN  = 'FECHA DE TERMINACION FINAL'
 
 # --- Histórico de pagos ---
@@ -63,13 +66,10 @@ HIS_PROVEEDOR  = 'Proveedor'     # codigo BP SAP en el historico
 HIS_RP         = 'Numero RP'
 HIS_CDP        = 'CDP Externo'
 HIS_CRP        = 'CRP Externo'
+HIS_NOMBRE     = 'Nombre'
 
 HIS_STATUS     = 'Estatus'      # columna BH del histórico
 HIS_STATUS_OK  = 'PAGADA'
-
-
-
-
 
 # --- Coordenadas base del formato (antes de insertar adiciones) ---
 C_CTO, C_CONTRATISTA, C_CCNIT      = 'D5', 'D6', 'H6'
@@ -234,6 +234,7 @@ def _extraer_datos_consolidado(df_con, contrato):
         'doc':    None if pd.isna(r.get(CON_DOC)) else str(r.get(CON_DOC)),
         'valor_inicial': None if pd.isna(r.get(CON_VALOR_INI)) else float(r.get(CON_VALOR_INI)),
         'fecha_ini': _fecha(r.get(CON_FECHA_INI)),
+        'fecha_term_ini': _fecha(r.get(CON_FECHA_TERM_INI)),
         'fecha_fin': _fecha(r.get(CON_FECHA_FIN)),
     }
 
@@ -256,6 +257,173 @@ def _fmt_fecha(v):
     except (ValueError, TypeError):
         return str(v).split(' ')[0]
 
+def _fecha_key(v):
+    if v is None or v == '':
+        return _dt.max
+    if isinstance(v, _dt):
+        return v
+    s = str(v).strip().split('.')[0]
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%d/%m/%Y', '%d/%m/%Y %H:%M:%S'):
+        try:
+            return _dt.strptime(s, fmt)
+        except Exception:
+            pass
+    return _dt.max
+
+
+def _detectar_cesion(df_crp, contrato, pagos, valor_inicial):
+    """Detecta cesión con doble confirmación en CRP e histórico."""
+    df = df_crp.copy()
+    df['_nc'] = df[CRP_COMPROMISO].astype(str).str.strip()
+    df['_obj'] = df[CRP_OBJETO].map(_sinac)
+    df = df[df['_nc'].apply(lambda x: _es_match(x, contrato))]
+    df = df[~df['_obj'].str.contains(REEMPLAZO, na=False)]
+    if df.empty:
+        return None
+
+    es_ad = df['_obj'].str.contains('ADICION Y PRORROGA', na=False)
+    base = df[~es_ad]
+    adic = df[es_ad]
+    if base.empty:
+        return None
+
+    bp_base = str(base.iloc[0][CRP_BENEF_BP]).split('.')[0]
+    nombre_cedente = str(base.iloc[0][CRP_BENEF_NOMBRE])
+    doc_cedente = _fmt_doc(base.iloc[0][CRP_BENEF_DOC])
+
+    ces_crp = []
+    for _, r in adic.iterrows():
+        bp_ad = str(r[CRP_BENEF_BP]).split('.')[0]
+        if bp_ad and bp_ad != bp_base:
+            ces_crp.append({
+                'bp': bp_ad,
+                'nombre': str(r[CRP_BENEF_NOMBRE]),
+                'doc': _fmt_doc(r[CRP_BENEF_DOC]),
+                'valor_adicion': float(r[CRP_VALOR] or 0),
+            })
+    if not ces_crp:
+        return None
+
+    por_bp = {}
+    for p in pagos:
+        bp = str(p.get('bp_sap', '')).split('.')[0]
+        if bp:
+            por_bp.setdefault(bp, []).append(p)
+    if len(por_bp) < 2:
+        return None
+
+    for bp in por_bp:
+        por_bp[bp].sort(key=lambda p: _fecha_key(p.get('fecha')))
+
+    pagos_cedente = por_bp.get(bp_base, [])
+    total_cedente = sum(float(p.get('valor', 0) or 0) for p in pagos_cedente)
+    valor_cesion = valor_inicial - total_cedente
+
+    cesionarios = []
+    for c in ces_crp:
+        cesionarios.append({**c, 'pagos': por_bp.get(c['bp'], []),
+                            'valor_cesion': valor_cesion})
+
+    return {
+        'bp_cedente': bp_base,
+        'nombre_cedente': nombre_cedente,
+        'doc_cedente': doc_cedente,
+        'pagos_cedente': pagos_cedente,
+        'valor_cesion': valor_cesion,
+        'cesionarios': cesionarios,
+    }
+
+
+def _cs_merge_map(ws):
+    from openpyxl.utils import range_boundaries
+    m = {}
+    for mr in ws.merged_cells.ranges:
+        c1, r1, c2, r2 = range_boundaries(mr.coord)
+        for r in range(r1, r2 + 1):
+            for c in range(c1, c2 + 1):
+                m[(r, c)] = (r1, c1)
+    return m
+
+
+def _cs_wrc(ws, row, col, val, fmt=False, m=None):
+    if m is None:
+        m = _cs_merge_map(ws)
+    d = m.get((row, col), (row, col))
+    cel = ws.cell(row=d[0], column=d[1])
+    cel.value = val
+    if fmt:
+        cel.number_format = '"$"#,##0'
+
+
+def _cs_desmerge(ws, fila, c1=2, c2=10):
+    from openpyxl.utils import range_boundaries
+    for mr in list(ws.merged_cells.ranges):
+        mc1, mr1, mc2, mr2 = range_boundaries(mr.coord)
+        if mr1 <= fila <= mr2 and mc1 <= c2 and mc2 >= c1:
+            ws.unmerge_cells(mr.coord)
+
+
+def _cs_buscar(ws, texto, col=3, desde=26, hasta=70):
+    t = texto.strip().upper()
+    for r in range(desde, hasta + 1):
+        v = ws.cell(row=r, column=col).value
+        if v and t in str(v).strip().upper():
+            return r
+    return None
+
+
+def llenar_cesiones(ws, ces, secop, fmt_valor='"$"#,##0'):
+    """Llena sección CESIÓN del Excel."""
+    if not ces or not ces['cesionarios']:
+        return
+
+    m = _cs_merge_map(ws)
+    c1 = ces['cesionarios'][0]
+
+    f_cto = _cs_buscar(ws, 'CTO Y VIG', col=3, desde=26, hasta=70)
+    if not f_cto:
+        return
+
+    _cs_wrc(ws, f_cto, 4, ces.get('contrato', ''), m=m)
+    _cs_wrc(ws, f_cto, 8, c1['bp'], m=m)
+    _cs_wrc(ws, f_cto + 1, 4, c1['nombre'], m=m)
+    _cs_wrc(ws, f_cto + 1, 8, c1['doc'], m=m)
+    _cs_wrc(ws, f_cto + 2, 4, c1['valor_cesion'], fmt=True, m=m)
+    rp = c1['pagos'][0]['rp'] if c1['pagos'] else ''
+    _cs_wrc(ws, f_cto + 2, 8, rp, m=m)
+    _cs_wrc(ws, f_cto + 3, 4, secop.get('fecha_ini', ''), m=m)
+    _cs_wrc(ws, f_cto + 3, 8, secop.get('fecha_fin', ''), m=m)
+    _cs_wrc(ws, f_cto + 4, 4, c1['valor_adicion'], fmt=True, m=m)
+
+    f_hdr = None
+    for r in range(f_cto + 4, f_cto + 15):
+        v = ws.cell(row=r, column=3).value
+        if v and 'PERIODO' in str(v).upper():
+            f_hdr = r
+            break
+    if not f_hdr:
+        return
+    f_pago = f_hdr + 1
+
+    for i in range(len(c1['pagos']) + 2):
+        _cs_desmerge(ws, f_pago + i)
+
+    saldo = c1['valor_cesion'] + c1['valor_adicion']
+    r = f_pago
+    for i, p in enumerate(c1['pagos'], start=1):
+        saldo -= p['valor']
+        _cs_wrc(ws, r, 2, i, m=m)
+        _cs_wrc(ws, r, 3, p['periodo'], m=m)
+        _cs_wrc(ws, r, 4, p['valor'], fmt=True, m=m)
+        _cs_wrc(ws, r, 5, saldo, fmt=True, m=m)
+        _cs_wrc(ws, r, 6, p['doc'], m=m)
+        _cs_wrc(ws, r, 7, p['fecha'], m=m)
+        _cs_wrc(ws, r, 8, p['rp'], m=m)
+        _cs_wrc(ws, r, 9, p['cdp'], m=m)
+        _cs_wrc(ws, r, 10, p['crp'], m=m)
+        r += 1
+
+
 def _extraer_pagos(df_his, contrato):
     if df_his is None:
         return []
@@ -275,6 +443,7 @@ def _extraer_pagos(df_his, contrato):
             'cdp':     _fmt_doc(p.get(HIS_CDP)),
             'crp':     _fmt_doc(p.get(HIS_CRP)),
             'bp_sap':  _fmt_doc(p.get(HIS_PROVEEDOR)),
+            'nombre':  '' if pd.isna(p.get(HIS_NOMBRE)) else str(p.get(HIS_NOMBRE)),
         })
     return pagos
 
@@ -287,7 +456,7 @@ def generar_estado_cuenta(plantilla_path, crp_path, consolidado_path,
     df_crp = pd.read_excel(crp_path, sheet_name=0, engine="calamine")
     df_con = pd.read_excel(consolidado_path, sheet_name=0, engine="calamine") if consolidado_path else None
     _cols_his = [HIS_REFERENCIA, HIS_VALOR, HIS_PERIODO, HIS_DOC,
-                 HIS_FECHA, HIS_RP, HIS_CDP, HIS_CRP, HIS_STATUS, HIS_PROVEEDOR]
+                 HIS_FECHA, HIS_RP, HIS_CDP, HIS_CRP, HIS_STATUS, HIS_PROVEEDOR, HIS_NOMBRE]
     # Mapa canonico: nombre normalizado (minusculas, sin espacios extra) -> nombre oficial
     _canon = {c.strip().lower(): c for c in _cols_his}
     def _quiere_col(c):
@@ -307,15 +476,32 @@ def generar_estado_cuenta(plantilla_path, crp_path, consolidado_path,
     con = _extraer_datos_consolidado(df_con, contrato) if df_con is not None else None
     pagos = _extraer_pagos(df_his, contrato)
 
+    # --- Detección de cesión ---
+    cesion = _detectar_cesion(df_crp, contrato, pagos, crp['valor_inicial'])
+    if cesion:
+        cesion['contrato'] = contrato
+        pagos = cesion['pagos_cedente']
+        nombre_cedente = cesion['nombre_cedente']
+        doc_cedente = cesion['doc_cedente']
+        if con and con.get('fecha_term_ini'):
+            fecha_fin = con['fecha_term_ini']
+        else:
+            fecha_fin = con['fecha_fin'] if con else None
+    else:
+        nombre_cedente = None
+        doc_cedente = None
+        cesion = None
+
     if crp['valor_inicial'] == 0 and not crp['adiciones'] and con is None:
         return {'ok': False, 'mensaje': f'No se encontró información para el contrato {contrato}'}
 
     # Fuentes finales (consolidado con prioridad; CRP de respaldo)
-    nombre = (con and con['nombre']) or crp['nombre_crp'] or ''
-    doc    = (con and con['doc'])    or crp['doc_crp'] or ''
+    nombre = nombre_cedente or (con and con['nombre']) or crp['nombre_crp'] or ''
+    doc    = doc_cedente or (con and con['doc'])    or crp['doc_crp'] or ''
     valor_inicial = crp['valor_inicial'] or (con and con['valor_inicial']) or 0.0
     fecha_ini = con['fecha_ini'] if con else None
-    fecha_fin = con['fecha_fin'] if con else None
+    if not cesion:
+        fecha_fin = con['fecha_fin'] if con else None
     adiciones = crp['adiciones']
     n_ad = len(adiciones)
     bp_sap = pagos[0]['bp_sap'] if pagos else ''
@@ -406,6 +592,13 @@ def generar_estado_cuenta(plantilla_path, crp_path, consolidado_path,
     ws[f'E{total_row}'].font = Font(name=f.name, size=f.size, bold=True)
     ws[f'E{total_row}'].number_format = fmt_valor
 
+    # --- Secciones de cesión ---
+    if cesion:
+        f_ini = con['fecha_ini'].strftime('%Y-%m-%d') if (con and con.get('fecha_ini')) else ''
+        f_fin = con['fecha_fin'].strftime('%Y-%m-%d') if (con and con.get('fecha_fin')) else ''
+        secop_datos = {'contrato': contrato, 'fecha_ini': f_ini, 'fecha_fin': f_fin}
+        llenar_cesiones(ws, cesion, secop_datos)
+
     wb.save(salida_path)
     return {'ok': True, 'contrato': contrato, 'contratista': nombre,
             'valor_inicial': valor_inicial, 'n_adiciones': n_ad,
@@ -420,21 +613,18 @@ def procesar():
         plantilla    = request.files.get('plantilla')
         reporte_crp  = request.files.get('reporte_crp')
         consolidado  = request.files.get('consolidado')
-        historico    = request.files.get('historico')     # opcional
+        historico    = request.files.get('historico')
         contrato     = (request.form.get('contrato') or '').strip()
 
-        if not plantilla or not reporte_crp or not contrato:
+        if not plantilla or not reporte_crp or not consolidado or not historico or not contrato:
             return jsonify({"ok": False,
-                            "mensaje": "Faltan datos: se requieren plantilla, reporte_crp y contrato"}), 400
+                            "mensaje": "Faltan datos: se requieren plantilla, reporte_crp, consolidado, histórico y contrato"}), 400
 
         tmp = tempfile.mkdtemp()
         p_plantilla = os.path.join(tmp, 'plantilla.xlsx');   plantilla.save(p_plantilla)
         p_crp       = os.path.join(tmp, 'crp.xlsx');          reporte_crp.save(p_crp)
-        p_con = p_his = None
-        if consolidado:
-            p_con = os.path.join(tmp, 'consolidado.xlsx');    consolidado.save(p_con)
-        if historico:
-            p_his = os.path.join(tmp, 'historico.xlsx');      historico.save(p_his)
+        p_con = os.path.join(tmp, 'consolidado.xlsx');        consolidado.save(p_con)
+        p_his = os.path.join(tmp, 'historico.xlsx');          historico.save(p_his)
 
         salida = os.path.join(tmp, f'Estado_de_Cuenta_{contrato}.xlsx')
         res = generar_estado_cuenta(p_plantilla, p_crp, p_con, p_his, contrato, salida)
