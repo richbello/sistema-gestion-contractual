@@ -541,50 +541,119 @@ document.getElementById("form-estadocuenta").addEventListener("submit", async (e
   e.preventDefault();
   mostrarAlerta("alerta-estadocuenta", "");
   document.getElementById("resultados-estadocuenta").classList.remove("visible");
-
   const plantilla   = document.getElementById("input-plantilla-ec").files[0];
   const crp         = document.getElementById("input-crp-ec").files[0];
   const consolidado = document.getElementById("input-consolidado-ec").files[0];
   const historico   = document.getElementById("input-historico-ec").files[0];
   const contrato    = document.getElementById("input-contrato-ec").value.trim();
-
   if (!plantilla || !crp || !contrato) {
     mostrarAlerta("alerta-estadocuenta", "Debes adjuntar la plantilla, el Reporte CRP e indicar el número de contrato.");
     return;
   }
-
-  const fd = new FormData();
-  fd.append("plantilla", plantilla);
-  fd.append("reporte_crp", crp);
-  if (consolidado) fd.append("consolidado", consolidado);
-  if (historico)   fd.append("historico", historico);
-  fd.append("contrato", contrato);
 
   const btn = document.getElementById("btn-estadocuenta");
   btn.disabled = true;
   mostrarEstado("estado-estadocuenta", true);
 
   try {
-    const resp = await fetch(`${API_BASE}/api/estado-cuenta/procesar`, { method: "POST", body: fd });
+    // Filtramos los Excel EN EL NAVEGADOR (SheetJS) y mandamos solo las filas del contrato.
+    // Asi el backend nunca carga archivos grandes -> nada de "sin memoria".
+    const esMatch = (nc) => {
+      nc = String(nc).trim();
+      if (nc === contrato) return true;
+      return nc.startsWith(contrato) && /^[0-9]+$/.test(nc.slice(contrato.length));
+    };
+    const leerHoja = async (file) => {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const wb  = XLSX.read(buf, { type: "array", cellDates: true });
+      const ws  = wb.Sheets[wb.SheetNames[0]];
+      return XLSX.utils.sheet_to_json(ws, { raw: true, defval: "" });
+    };
 
+    // --- CRP (obligatorio): match por prefijo en "No. Compromiso" ---
+    const crpRows = (await leerHoja(crp))
+      .filter(r => esMatch(r["No. Compromiso"]))
+      .map(r => ({
+        compromiso:   r["No. Compromiso"],
+        objeto:       r["Objeto"],
+        valor:        r["Valor CRP"],
+        interno:      r["N° Interno CRP"],
+        nombre_benef: r["Nombre BP Beneficiario"],
+        doc_benef:    r["Número Doc. BP Beneficiario"],
+        bp_benef:     r["BP Beneficiario"],
+      }));
+
+    // --- Historico (opcional): "Referencia" contiene el contrato y Estatus PAGADA ---
+    let pagos = [];
+    if (historico) {
+      pagos = (await leerHoja(historico))
+        .filter(r => String(r["Referencia"] || "").includes(contrato))
+        .filter(r => String(r["Estatus"] || "").trim().toUpperCase() === "PAGADA")
+        .map(r => ({
+          periodo: r["Texto cabecera documento"],
+          valor:   r["Valor Bruto"],
+          doc:     r["Doc.compensación"],
+          fecha:   r["Fecha de pago"],
+          rp:      r["Numero RP"],
+          cdp:     r["CDP Externo"],
+          crp:     r["CRP Externo"],
+          bp:      r["Proveedor"],
+          nombre:  r["Nombre"],
+        }));
+    }
+
+    // --- SECOP2 (opcional): match exacto en "CONTRATO" ---
+    let secop = null;
+    if (consolidado) {
+      const fila = (await leerHoja(consolidado))
+        .find(r => String(r["CONTRATO"] || "").trim() === contrato);
+      if (fila) {
+        secop = {
+          nombre:     fila["NOMBRE DEL CONTRATISTA"],
+          doc:        fila["NUMERO DE IDENTIFICACION"],
+          valor_ini:  fila["VALOR INICIAL DEL CONTRATO"],
+          f_ini:      fila["FECHA INICIAL DE CONTRATO"],
+          f_term_ini: fila["FECHA DE TERMINACION INICIAL"],
+          f_fin:      fila["FECHA DE TERMINACION FINAL"],
+        };
+      }
+    }
+
+    if (!crpRows.length && !secop) {
+      mostrarAlerta("alerta-estadocuenta", "No se encontró información para el contrato " + contrato);
+      return;
+    }
+
+    // Las fechas de Excel pueden venir como numero serial; SheetJS con cellDates las da como Date.
+    // Aqui las normalizamos a ISO si son Date.
+    const iso = (v) => (v instanceof Date) ? v.toISOString().slice(0,10) : v;
+    pagos.forEach(p => { p.fecha = iso(p.fecha); });
+    if (secop) { secop.f_ini = iso(secop.f_ini); secop.f_term_ini = iso(secop.f_term_ini); secop.f_fin = iso(secop.f_fin); }
+
+    const datos = { contrato, crp: crpRows, pagos, secop };
+
+    const fd = new FormData();
+    fd.append("plantilla", plantilla);
+    fd.append("contrato", contrato);
+    fd.append("datos", JSON.stringify(datos));
+
+    const resp = await fetch(`${API_BASE}/api/estado-cuenta/procesar-json`, { method: "POST", body: fd });
     if (!resp.ok) {
       let msg = "No se pudo generar el estado de cuenta.";
       try { const err = await resp.json(); if (err.mensaje) msg = err.mensaje; } catch (_) {}
       mostrarAlerta("alerta-estadocuenta", msg);
       return;
     }
-
     const blob = await resp.blob();
     const url  = URL.createObjectURL(blob);
     const nombre = `Estado_de_Cuenta_${contrato}.xlsx`;
-
     const link = document.getElementById("link-descarga-estadocuenta");
     link.href = url;
     link.download = nombre;
     document.getElementById("nombre-descarga-ec").textContent = nombre;
     document.getElementById("resultados-estadocuenta").classList.add("visible");
   } catch (err) {
-    mostrarAlerta("alerta-estadocuenta", "Error de conexión con el servidor. Verifica que el backend esté en ejecución.");
+    mostrarAlerta("alerta-estadocuenta", "Error: " + err.message);
   } finally {
     btn.disabled = false;
     mostrarEstado("estado-estadocuenta", false);
