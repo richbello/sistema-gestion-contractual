@@ -105,7 +105,12 @@ def _fecha(v):
         return v
     if isinstance(v, date):
         return datetime(v.year, v.month, v.day)
-    s = str(v).strip().split(' ')[0]
+    s = str(v).strip()
+    # ISO con T (2025-04-22T00:00:00.000Z) -> quedarse con la fecha
+    if 'T' in s:
+        s = s.split('T')[0]
+    else:
+        s = s.split(' ')[0]
     for f in ('%Y-%m-%d', '%d/%m/%Y', '%Y/%m/%d', '%d-%m-%Y'):
         try:
             return datetime.strptime(s, f)
@@ -458,15 +463,9 @@ def llenar_cesion(ws, ces, f_ini_ces, f_fin_ces, fila_desde):
 
 
 # --------------------------- orquestacion ---------------------------
-def generar_estado_cuenta(plantilla_path, crp_path, consolidado_path,
-                          historico_path, contrato, salida_path):
+def _preparar_y_armar(plantilla_path, base, adic, pagos, sec, contrato, salida_path):
+    """Toma datos YA extraidos (de archivo o de JSON) y arma el Excel. RAM minima."""
     contrato = str(contrato).strip()
-
-    filas_crp = leer_crp(crp_path, contrato) if crp_path else []
-    pagos     = leer_pagos(historico_path, contrato) if historico_path else []
-    sec       = leer_secop(consolidado_path, contrato) if consolidado_path else None
-
-    base, adic = partir_crp(filas_crp)
     crp = resumen_crp(base, adic)
 
     if crp['valor_ini'] == 0 and not crp['adiciones'] and sec is None:
@@ -604,6 +603,68 @@ def generar_estado_cuenta(plantilla_path, crp_path, consolidado_path,
     return res
 
 
+def generar_estado_cuenta(plantilla_path, crp_path, consolidado_path,
+                          historico_path, contrato, salida_path):
+    contrato = str(contrato).strip()
+
+    filas_crp = leer_crp(crp_path, contrato) if crp_path else []
+    pagos     = leer_pagos(historico_path, contrato) if historico_path else []
+    sec       = leer_secop(consolidado_path, contrato) if consolidado_path else None
+
+    base, adic = partir_crp(filas_crp)
+    return _preparar_y_armar(plantilla_path, base, adic, pagos, sec, contrato, salida_path)
+
+
+
+
+
+# --------------------- endpoint LITE: datos ya filtrados por el navegador ---------------------
+def armar_desde_datos(plantilla_path, datos, salida_path):
+    """Recibe el JSON pequeno que arma el navegador (filas ya filtradas por contrato)."""
+    contrato = str(datos.get('contrato', '')).strip()
+
+    filas_crp = []
+    for r in datos.get('crp', []):
+        filas_crp.append({
+            CRP_COMPROMISO:   r.get('compromiso', ''),
+            CRP_OBJETO:       r.get('objeto', ''),
+            CRP_VALOR:        r.get('valor', 0),
+            CRP_INTERNO:      r.get('interno', ''),
+            CRP_BENEF_NOMBRE: r.get('nombre_benef', ''),
+            CRP_BENEF_DOC:    r.get('doc_benef', ''),
+            CRP_BENEF_BP:     r.get('bp_benef', ''),
+        })
+
+    pagos = []
+    for p in datos.get('pagos', []):
+        pagos.append({
+            'periodo': p.get('periodo', ''),
+            'valor':   float(p.get('valor', 0) or 0),
+            'doc':     _doc(p.get('doc')),
+            'fecha':   _fecha(p.get('fecha')),
+            'rp':      _doc(p.get('rp')),
+            'cdp':     _doc(p.get('cdp')),
+            'crp':     _doc(p.get('crp')),
+            'bp':      _doc(p.get('bp')),
+            'nombre':  p.get('nombre', ''),
+        })
+    pagos.sort(key=lambda p: p['fecha'] or datetime.max)
+
+    sd = datos.get('secop')
+    sec = None
+    if sd:
+        sec = {
+            'nombre': sd.get('nombre', ''), 'doc': _doc(sd.get('doc')),
+            'valor_ini': float(sd.get('valor_ini', 0) or 0),
+            'f_ini': _fecha(sd.get('f_ini')),
+            'f_term_ini': _fecha(sd.get('f_term_ini')),
+            'f_fin': _fecha(sd.get('f_fin')),
+        }
+
+    base, adic = partir_crp(filas_crp)
+    return _preparar_y_armar(plantilla_path, base, adic, pagos, sec, contrato, salida_path)
+
+
 # ============================ ENDPOINTS ============================
 @estado_cuenta_bp.route('/procesar', methods=['POST'])
 @cross_origin()
@@ -661,6 +722,32 @@ def procesar_lite():
         r = generar_estado_cuenta_desde_datos(p_pl, pagos, contrato, salida)
         if not r.get('ok'):
             return jsonify(r), 400
+        return send_file(salida, as_attachment=True,
+                         download_name=f'Estado_de_Cuenta_{contrato}.xlsx')
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'ok': False, 'mensaje': str(e)}), 500
+
+
+@estado_cuenta_bp.route('/procesar-json', methods=['POST'])
+@cross_origin()
+def procesar_json():
+    """El navegador filtra los Excel y manda solo las filas del contrato (JSON pequeno)."""
+    try:
+        plantilla = request.files.get('plantilla')
+        datos_raw = request.form.get('datos')
+        contrato  = (request.form.get('contrato') or '').strip()
+        if not plantilla or not datos_raw or not contrato:
+            return jsonify({'ok': False, 'mensaje': 'Faltan datos: plantilla, datos y contrato'}), 400
+        datos = json.loads(datos_raw)
+        datos.setdefault('contrato', contrato)
+        tmp = tempfile.mkdtemp()
+        p_pl = os.path.join(tmp, 'plantilla.xlsx')
+        plantilla.save(p_pl)
+        salida = os.path.join(tmp, f'Estado_de_Cuenta_{contrato}.xlsx')
+        res = armar_desde_datos(p_pl, datos, salida)
+        if not res.get('ok'):
+            return jsonify(res), 400
         return send_file(salida, as_attachment=True,
                          download_name=f'Estado_de_Cuenta_{contrato}.xlsx')
     except Exception as e:
