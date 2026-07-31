@@ -305,6 +305,7 @@ def _buscar(ws, texto, col=3, desde=1, hasta=None):
         if v and t in str(v).strip().upper(): return r
     return None
 def _detectar_cesion_masivo(pagos, dc):
+    pagos=sorted(pagos, key=lambda p:_fecha(_g(_pn(p),"Fecha de pago")) or datetime.max)
     por_bp={}; orden=[]
     for p in pagos:
         pn=_pn(p); bp=_limpiar(_g(pn,"Proveedor"))
@@ -314,7 +315,10 @@ def _detectar_cesion_masivo(pagos, dc):
     if len(orden)<2: return None
     bpc=orden[0]
     vi=_num(dc.get("valor_inicial")) if dc else 0.0
-    if not vi and pagos: vi=_num(_g(_pn(pagos[0]),"VALOR FINAL DEL CONTRATO"))
+    if not vi:
+        for p in pagos:
+            v=_num(_g(_pn(p),"VALOR FINAL DEL CONTRATO","VALOR INICIAL DEL CONTRATO"))
+            if v>0: vi=v; break
     pc=por_bp[bpc]; suma=sum(_num(_g(_pn(p),"Valor Bruto")) for p in pc)
     vces=vi-suma; ces=[]
     for bp in orden[1:]:
