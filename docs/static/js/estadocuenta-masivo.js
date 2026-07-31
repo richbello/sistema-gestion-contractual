@@ -392,7 +392,9 @@ def llenar(plantilla_b64, pagos_json, contrato, datos_json):
             if _fc:
                 _llenar_bloque_cesion(ws, _ces["cesionarios"][0], contrato, dc, _fc)
     except Exception as _e:
-        pass
+        import traceback as _tb
+        print("ERROR CESION:", _e)
+        _tb.print_exc()
     out=io.BytesIO(); wb.save(out)
     return base64.b64encode(out.getvalue()).decode()
 `;
