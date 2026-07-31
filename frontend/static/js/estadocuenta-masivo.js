@@ -296,6 +296,61 @@ def _cab(ws,m,dc,nombre_hist=""):
         if ftf:_wc(ws,"H10",ftf,m=m)
     return vf if vf>0 else vi
 
+def _sinac(s):
+    return "".join(c for c in unicodedata.normalize("NFKD", str(s)) if not unicodedata.combining(c)).upper()
+def _buscar(ws, texto, col=3, desde=1, hasta=None):
+    t=texto.strip().upper(); hasta=hasta or ws.max_row
+    for r in range(desde,hasta+1):
+        v=ws.cell(row=r,column=col).value
+        if v and t in str(v).strip().upper(): return r
+    return None
+def _detectar_cesion_masivo(pagos, dc):
+    por_bp={}; orden=[]
+    for p in pagos:
+        pn=_pn(p); bp=_limpiar(_g(pn,"Proveedor"))
+        if not bp: continue
+        if bp not in por_bp: por_bp[bp]=[]; orden.append(bp)
+        por_bp[bp].append(p)
+    if len(orden)<2: return None
+    bpc=orden[0]
+    vi=_num(dc.get("valor_inicial")) if dc else 0.0
+    if not vi and pagos: vi=_num(_g(_pn(pagos[0]),"VALOR FINAL DEL CONTRATO"))
+    pc=por_bp[bpc]; suma=sum(_num(_g(_pn(p),"Valor Bruto")) for p in pc)
+    vces=vi-suma; ces=[]
+    for bp in orden[1:]:
+        pgs=por_bp[bp]; pn0=_pn(pgs[0])
+        ces.append({"bp":bp,"nombre":_txt(_g(pn0,"Nombre")),"pagos":pgs,"valor_cesion":vces})
+    return {"bp_cedente":bpc,"pagos_cedente":pc,"valor_cesion":vces,"cesionarios":ces}
+def _llenar_bloque_cesion(ws, c, contrato, dc, fila_titulo):
+    m=_mm(ws)
+    f_cto=_buscar(ws,"CTO Y VIG",col=3,desde=fila_titulo)
+    if not f_cto: return False
+    _wrc(ws,f_cto,4,contrato,m=m); _wrc(ws,f_cto,8,c["bp"],m=m)
+    _wrc(ws,f_cto+1,4,c["nombre"],m=m)
+    _wrc(ws,f_cto+2,4,c["valor_cesion"],money=True,m=m)
+    if c["pagos"]:
+        pn0=_pn(c["pagos"][0]); _wrc(ws,f_cto+2,8,_limpiar(_g(pn0,"Numero RP")),m=m)
+    if dc:
+        fti=_fecha(dc.get("fecha_term_inicial")); ftf=_fecha(dc.get("fecha_term_final"))
+        if fti: _wrc(ws,f_cto+3,4,fti+timedelta(days=1),m=m)
+        if ftf: _wrc(ws,f_cto+3,8,ftf,m=m)
+    f_hdr=_buscar(ws,"PERIODO",col=3,desde=f_cto)
+    if not f_hdr: return False
+    f_pago=f_hdr+1; f_total=_buscar(ws,"TOTAL",col=2,desde=f_pago)
+    slots=(f_total-f_pago) if f_total else 6
+    for i in range(min(len(c["pagos"]),slots)): _dm(ws,f_pago+i)
+    m=_mm(ws); saldo=c["valor_cesion"]; suma=0
+    for i,p in enumerate(c["pagos"][:slots]):
+        pn=_pn(p); mo=_num(_g(pn,"Valor Bruto")); saldo-=mo; suma+=mo; r=f_pago+i
+        fp=_fecha(_g(pn,"Fecha de pago")) or _txt(_g(pn,"Fecha de pago"))
+        _wrc(ws,r,2,i+1,m=m); _wrc(ws,r,3,_txt(_g(pn,"Texto cabecera documento")),m=m)
+        _wrc(ws,r,4,mo,money=True,m=m); _wrc(ws,r,5,saldo,money=True,m=m)
+        _wrc(ws,r,6,_limpiar(_g(pn,"Doc.compensación","Doc compensacion")),m=m)
+        _wrc(ws,r,7,fp,m=m); _wrc(ws,r,8,_limpiar(_g(pn,"Numero RP")),m=m)
+        _wrc(ws,r,9,_limpiar(_g(pn,"CDP Externo")),m=m); _wrc(ws,r,10,_limpiar(_g(pn,"CRP Externo")),m=m)
+    if f_total: _wrc(ws,f_total,4,suma,money=True,m=m); _wrc(ws,f_total,5,saldo,money=True,m=m)
+    return True
+
 def llenar(plantilla_b64, pagos_json, contrato, datos_json):
     pl=base64.b64decode(plantilla_b64)
     pagos=json.loads(pagos_json)
@@ -325,6 +380,15 @@ def llenar(plantilla_b64, pagos_json, contrato, datos_json):
         _wrc(ws,fa,7,fp,m=m); _wrc(ws,fa,8,_limpiar(_g(pn,"Numero RP")),m=m)
         _wrc(ws,fa,9,_limpiar(_g(pn,"CDP Externo")),m=m); _wrc(ws,fa,10,_limpiar(_g(pn,"CRP Externo")),m=m)
         fa+=1
+    # --- CESIONES (deteccion automatica por BP en el historico) ---
+    try:
+        _ces=_detectar_cesion_masivo(pagos, dc)
+        if _ces and _ces["cesionarios"]:
+            _fc=_buscar(ws,"CESION",col=2,desde=1) or _buscar(ws,chr(67)+chr(69)+chr(83)+chr(73)+chr(211)+chr(78),col=2,desde=1)
+            if _fc:
+                _llenar_bloque_cesion(ws, _ces["cesionarios"][0], contrato, dc, _fc)
+    except Exception as _e:
+        pass
     out=io.BytesIO(); wb.save(out)
     return base64.b64encode(out.getvalue()).decode()
 `;
