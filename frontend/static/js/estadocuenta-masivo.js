@@ -304,7 +304,17 @@ def _buscar(ws, texto, col=3, desde=1, hasta=None):
         v=ws.cell(row=r,column=col).value
         if v and t in str(v).strip().upper(): return r
     return None
+def _buscar_cesion(ws, desde=1):
+    for r in range(desde, ws.max_row+1):
+        v = ws.cell(row=r, column=2).value
+        if not v: continue
+        t = _sinac(str(v).strip())
+        # aceptar solo "CESION" o "CESION 1", "CESION 2"... (celda corta, no instrucciones)
+        if t == "CESION" or (t.startswith("CESION ") and len(t) < 12):
+            return r
+    return None
 def _detectar_cesion_masivo(pagos, dc):
+    pagos=[p for p in pagos if _sinac(_g(_pn(p),"Estatus","Estado")) in ("PAGADA","")]
     pagos=sorted(pagos, key=lambda p:_fecha(_g(_pn(p),"Fecha de pago")) or datetime.max)
     por_bp={}; orden=[]
     for p in pagos:
@@ -389,7 +399,7 @@ def llenar(plantilla_b64, pagos_json, contrato, datos_json):
         _ces=_detectar_cesion_masivo(pagos, dc)
         print("DEBUG cesion:", "detectada" if _ces else "None", "| cesionarios:", len(_ces["cesionarios"]) if _ces else 0)
         if _ces and _ces["cesionarios"]:
-            _fc=_buscar(ws,"CESION",col=2,desde=1) or _buscar(ws,chr(67)+chr(69)+chr(83)+chr(73)+chr(211)+chr(78),col=2,desde=1)
+            _fc=_buscar_cesion(ws)
             print("DEBUG fila CESION:", _fc)
             if _fc:
                 _ok=_llenar_bloque_cesion(ws, _ces["cesionarios"][0], contrato, dc, _fc)
