@@ -387,10 +387,13 @@ def llenar(plantilla_b64, pagos_json, contrato, datos_json):
     # --- CESIONES (deteccion automatica por BP en el historico) ---
     try:
         _ces=_detectar_cesion_masivo(pagos, dc)
+        print("DEBUG cesion:", "detectada" if _ces else "None", "| cesionarios:", len(_ces["cesionarios"]) if _ces else 0)
         if _ces and _ces["cesionarios"]:
             _fc=_buscar(ws,"CESION",col=2,desde=1) or _buscar(ws,chr(67)+chr(69)+chr(83)+chr(73)+chr(211)+chr(78),col=2,desde=1)
+            print("DEBUG fila CESION:", _fc)
             if _fc:
-                _llenar_bloque_cesion(ws, _ces["cesionarios"][0], contrato, dc, _fc)
+                _ok=_llenar_bloque_cesion(ws, _ces["cesionarios"][0], contrato, dc, _fc)
+                print("DEBUG llenado:", _ok)
     except Exception as _e:
         import traceback as _tb
         print("ERROR CESION:", _e)
