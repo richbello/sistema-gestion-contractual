@@ -32,6 +32,7 @@ const MODULOS = {
   ciberseguridad:{ eyebrow: "Módulo 7", titulo: "Ciberseguridad" },
   licencias:     { eyebrow: "Módulo 8", titulo: "Licencias" },
   oxp:           { eyebrow: "Módulo 9", titulo: "CDP-CRP de OXP" },
+  exogena:       { eyebrow: "Módulo 10", titulo: "Reportes Exógena" },
 };
 /* ---------------------------- Navegación ---------------------------- */
 function cambiarVista(idVista) {

@@ -58,6 +58,7 @@
       <button class="nav-item" data-vista="ciberseguridad"><span class="nav-numero">07</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l7 4v6c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg> Ciberseguridad</button>
       <button class="nav-item" data-vista="licencias"><span class="nav-numero">08</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M15 7a4 4 0 11-8 0 4 4 0 018 0z"/><path d="M11 11l7 7 2-2-2-2 2-2-3-3"/></svg> Licencias</button>
       <button class="nav-item" data-vista="oxp"><span class="nav-numero">09</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 9v11"/></svg> CDP-CRP de OXP</button>
+      <button class="nav-item" data-vista="exogena"><span class="nav-numero">10</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 18h4M9 12h2"/></svg> Reportes Exógena</button>
     </nav>
 
     <div class="sidebar-pie">
@@ -767,6 +768,59 @@
       </div>
     </section>
 
+    <!-- ===================== VISTA 10: Reportes Exógena ===================== -->
+    <section class="vista" id="vista-exogena" hidden>
+      <style>
+        .exo-tabs { display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid #e2e8f0; }
+        .exo-tab { background:none; border:0; padding:10px 18px; cursor:pointer; font-size:.95rem; font-weight:600; color:#64748b; border-bottom:2px solid transparent; margin-bottom:-1px; }
+        .exo-tab:hover { color:#334155; }
+        .exo-tab.activo { color:#4f46e5; border-bottom-color:#4f46e5; }
+        .exo-panel { display:none; } .exo-panel.activo { display:block; }
+        .exo-nota { border:1px solid #f6ad55; background:#fffaf0; padding:10px 12px; border-radius:8px; font-size:.85rem; margin-top:12px; color:#7c4a03; }
+        #resumen-exo { margin-top:10px; color:#475569; font-size:.9rem; }
+      </style>
+
+      <div class="exo-tabs">
+        <button type="button" class="exo-tab activo" data-panel="exo-distrital">Distrital · Bogotá</button>
+        <button type="button" class="exo-tab" data-panel="exo-nacional">DIAN · Nacional</button>
+      </div>
+
+      <div id="exo-distrital" class="exo-panel activo">
+        <form class="panel" id="form-exo-distrital" onsubmit="return false;">
+          <div class="panel-acento-superior"></div>
+          <div class="panel-cuerpo">
+            <div class="grid-form una-col">
+              <div class="campo">
+                <label>Insumo (Excel)</label>
+                <div class="ayuda">Año gravable 2025 · Resolución DDI-024115. La entrega final se hace por PIDO / Storm User 4.4.2 (genera el .STR certificado). Este módulo produce el archivo de cargue con la estructura de la ficha técnica.</div>
+                <div class="dropzone" id="drop-exo-d">
+                  <input type="file" id="input-exo-d" accept=".xlsx,.xls">
+                  <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+                  <div class="dropzone-texto"><strong>Arrastra el archivo</strong> o haz clic para seleccionarlo</div>
+                  <div class="dropzone-detalle">.xlsx · un solo archivo</div>
+                </div>
+                <div class="lista-archivos" id="lista-exo-d"></div>
+                <div id="resumen-exo"></div>
+              </div>
+            </div>
+            <div class="barra-acciones">
+              <button type="button" class="btn btn-primario" id="btn-exo-d" disabled>
+                <svg class="icono-btn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                Generar archivo de cargue
+              </button>
+            </div>
+            <div class="exo-nota">Pendiente conectar el generador: falta la ficha técnica / plantilla de Storm del formato distrital aplicable (Retenciones ICA o Compras). Al cargarla, se activa la generación.</div>
+          </div>
+        </form>
+      </div>
+
+      <div id="exo-nacional" class="exo-panel">
+        <div class="panel"><div class="panel-cuerpo">
+          <p style="color:#64748b;">Generador de <strong>DIAN Nacional · Formato 1001 v10</strong> (pagos y retenciones) en XML según el esquema oficial. <strong>Próximamente.</strong></p>
+        </div></div>
+      </div>
+    </section>
+
   </main>
 </div>
 
@@ -785,5 +839,6 @@
   <script src="static/js/asistente-ia.js"></script>
   <script src="static/js/estadocuenta-masivo.js"></script>
   <script src="static/js/modulo-12-oxp.js"></script>
+  <script src="static/js/modulo-10-exogena.js"></script>
 </body>
 </html>
