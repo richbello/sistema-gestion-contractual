@@ -93,6 +93,12 @@
           Validación de plantilla
         </button>
 
+        <button class="nav-item" data-vista="oxp">
+          <span class="nav-numero">12</span>
+          <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 9v11"/></svg>
+          CDP-CRP de OXP
+        </button>
+
         <a class="nav-item" href="cuentas_bancarias.html" target="_blank" rel="noopener" style="text-decoration:none;">
           <span class="nav-numero">$</span>
           <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>
@@ -743,6 +749,70 @@
         </form>
       </section>
 
+    <!-- ===================== VISTA 12: CDP-CRP de OXP ===================== -->
+    <section class="vista" id="vista-oxp" hidden>
+      <style>
+        .oxp-tabs { display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid #e2e8f0; }
+        .oxp-tab { background:none; border:0; padding:10px 18px; cursor:pointer; font-size:.95rem; font-weight:600; color:#64748b; border-bottom:2px solid transparent; margin-bottom:-1px; }
+        .oxp-tab:hover { color:#334155; }
+        .oxp-tab.activo { color:#4f46e5; border-bottom-color:#4f46e5; }
+        .oxp-tab:disabled { color:#cbd5e1; cursor:not-allowed; }
+        .oxp-panel { display:none; } .oxp-panel.activo { display:block; }
+        #resumen-oxp { margin-top:10px; color:#475569; font-size:.9rem; }
+      </style>
+
+      <div class="oxp-tabs">
+        <button type="button" class="oxp-tab activo" data-panel="oxp-crp">CRP OXP</button>
+        <button type="button" class="oxp-tab" data-panel="oxp-cdp" disabled>CDP OXP · próximamente</button>
+      </div>
+
+      <div id="oxp-crp" class="oxp-panel activo">
+        <form class="panel" id="form-oxp" onsubmit="return false;">
+          <div class="panel-acento-superior"></div>
+          <div class="panel-cuerpo">
+            <div class="grid-form una-col">
+              <div class="campo">
+                <label>Reporte CRP</label>
+                <div class="ayuda">Export SAP/BOGDATA del CRP (cierre de vigencia). Se procesa en tu navegador y se filtran las obligaciones con saldo pendiente (Com.Sin.Aut.Giro &gt; 0). Un CRP con varias posiciones se agrupa automáticamente.</div>
+                <div class="dropzone" id="drop-oxp">
+                  <input type="file" id="input-oxp" accept=".xlsx,.xls" required>
+                  <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+                  <div class="dropzone-texto"><strong>Arrastra el archivo</strong> o haz clic para seleccionarlo</div>
+                  <div class="dropzone-detalle">.xlsx · un solo archivo</div>
+                </div>
+                <div class="lista-archivos" id="lista-oxp"></div>
+                <div id="resumen-oxp"></div>
+              </div>
+            </div>
+
+            <div class="barra-acciones">
+              <button type="button" class="btn btn-primario" id="btn-oxp-crp" disabled>
+                <svg class="icono-btn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                Generar CRP OXP
+              </button>
+              <div class="estado-proceso" id="estado-oxp"><span class="spinner"></span> Generando formato…</div>
+            </div>
+
+            <div class="alerta alerta-error" id="alerta-oxp"></div>
+
+            <div class="resultados" id="resultados-oxp">
+              <div class="resultados-cabecera">
+                <svg class="sello-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>
+                <h3>CRP OXP generado</h3>
+              </div>
+              <div class="metricas-grid" id="metricas-oxp"></div>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <div id="oxp-cdp" class="oxp-panel">
+        <div class="panel"><div class="panel-cuerpo">
+          <p style="color:#64748b;">El generador de <strong>CDP OXP</strong> estará disponible próximamente. Por ahora este módulo constituye únicamente el <strong>CRP OXP</strong>.</p>
+        </div></div>
+      </div>
+    </section>
+
   </main>
 </div>
 
@@ -760,5 +830,6 @@
 <script src="static/js/modulo-10-licencias.js"></script>
   <script src="static/js/asistente-ia.js"></script>
   <script src="static/js/estadocuenta-masivo.js"></script>
+  <script src="static/js/modulo-12-oxp.js"></script>
 </body>
 </html>
