@@ -20,18 +20,18 @@ function descargarSaneada(b64) {
 
 
 const MODULOS = {
-  extraccion:    { eyebrow: "Módulo 01", titulo: "Extracción de causaciones" },
-  plantilla:     { eyebrow: "Módulo 02", titulo: "Plantilla de pagos" },
-  pac:           { eyebrow: "Módulo 03", titulo: "Cuadre PAC" },
-  estadocuenta:  { eyebrow: "Módulo 04", titulo: "Estado de cuenta" },
-  historico:     { eyebrow: "Módulo 05", titulo: "Histórico de Pagos" },
-  presupuestal:  { eyebrow: "Módulo 06", titulo: "Análisis Presupuestal" },
-  contratacion:  { eyebrow: "Módulo 07", titulo: "Contratación" },
-  planeacion:    { eyebrow: "Módulo 08", titulo: "Planeación PDL" },
-  ciberseguridad:{ eyebrow: "Módulo 09", titulo: "Ciberseguridad" },
-  licencias:     { eyebrow: "Módulo 10", titulo: "Licencias" },
-  validacion:    { eyebrow: "Módulo 11", titulo: "Validación de plantilla" },
-  oxp:           { eyebrow: "Módulo 12", titulo: "CDP-CRP de OXP" },
+  extraccion:    { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Extracción de causaciones" },
+  plantilla:     { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Plantilla de pagos" },
+  pac:           { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Cuadre PAC" },
+  validacion:    { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Validación de plantilla" },
+  estadocuenta:  { eyebrow: "Módulo 2", titulo: "Estados de Cuenta" },
+  historico:     { eyebrow: "Módulo 3", titulo: "Históricos de Pagos" },
+  presupuestal:  { eyebrow: "Módulo 4", titulo: "Análisis Presupuestal" },
+  contratacion:  { eyebrow: "Módulo 5", titulo: "Contratación" },
+  planeacion:    { eyebrow: "Módulo 6", titulo: "Planeación PDL" },
+  ciberseguridad:{ eyebrow: "Módulo 7", titulo: "Ciberseguridad" },
+  licencias:     { eyebrow: "Módulo 8", titulo: "Licencias" },
+  oxp:           { eyebrow: "Módulo 9", titulo: "CDP-CRP de OXP" },
 };
 /* ---------------------------- Navegación ---------------------------- */
 function cambiarVista(idVista) {
@@ -43,7 +43,16 @@ function cambiarVista(idVista) {
   document.getElementById("titulo-modulo").textContent = MODULOS[idVista].titulo;
 }
 document.querySelectorAll(".nav-item").forEach(btn => {
-  btn.addEventListener("click", () => cambiarVista(btn.dataset.vista));
+  btn.addEventListener("click", () => {
+    if (btn.dataset.submenu) {
+      const sm = document.getElementById("submenu-" + btn.dataset.submenu);
+      if (sm) sm.classList.toggle("abierto");
+      btn.classList.toggle("expandido");
+      return;
+    }
+    if (!btn.dataset.vista) return;   // enlaces externos (p.ej. Cuentas bancarias)
+    cambiarVista(btn.dataset.vista);
+  });
 });
 /* ---------------------------- Dropzones ---------------------------- */
 function formatearTamano(bytes) {
