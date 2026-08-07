@@ -3,10 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sistema de Gestión Contractual y Financiera</title>
+<title>Sistema de Gestión Presupuestal y Financiera</title>
 <link rel="stylesheet" href="static/css/estilos.css">
     <link rel="stylesheet" href="static/css/responsive.css">
-  </head>
+  <style id="estilos-submenu-modulos">
+  .nav-parent { position:relative; }
+  .nav-chevron { margin-left:auto; width:14px; height:14px; transition:transform .2s ease; opacity:.55; flex:none; }
+  .nav-parent.expandido .nav-chevron { transform:rotate(90deg); }
+  .nav-submenu { display:none; margin:2px 0 8px; padding-left:6px; border-left:1px solid rgba(201,162,39,.28); }
+  .nav-submenu.abierto { display:block; }
+  .nav-subgrupo-titulo { display:block; font-size:.6rem; letter-spacing:1.2px; text-transform:uppercase; opacity:.5; margin:6px 0 4px 22px; }
+  .nav-item.nav-sub { padding-left:22px; font-size:.85rem; }
+  .sidebar-pie .copyright { margin-top:10px; opacity:.7; }
+</style>
+</head>
 <body>
 
 <div class="banner-backend" id="banner-backend" hidden></div>
@@ -23,92 +33,36 @@
       </svg>
       <div class="marca-texto">
         <span class="marca-eyebrow">Alcaldía Local</span>
-        <p class="marca-titulo">Gestión Contractual<br>y Financiera</p>
+        <p class="marca-titulo">Gestión Presupuestal<br>y Financiera</p>
       </div>
     </div>
 
     <nav class="nav-modulos">
       <span class="nav-grupo-titulo">Módulos del proceso</span>
 
-      <button class="nav-item activo" data-vista="extraccion">
-        <span class="nav-numero">01</span>
-        <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6M9 9h1"/></svg>
-        Extracción de causaciones
-      </button>
+      <button class="nav-item nav-parent expandido" data-submenu="tramite"><span class="nav-numero">01</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M8 8h8M8 12h8M8 16h5"/></svg> Trámite de Pagos <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
+      <div class="nav-submenu abierto" id="submenu-tramite">
+        <span class="nav-subgrupo-titulo">Personas Naturales</span>
+        <button class="nav-item nav-sub" data-vista="extraccion"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6M9 9h1"/></svg> Extracción de causaciones</button>
+        <button class="nav-item nav-sub" data-vista="plantilla"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9h18M9 9v11"/></svg> Plantilla de pagos</button>
+        <button class="nav-item nav-sub" data-vista="pac"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg> Cuadre PAC</button>
+        <button class="nav-item nav-sub" data-vista="validacion"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/></svg> Validación de plantilla</button>
+        <a class="nav-item nav-sub" href="cuentas_bancarias.html" target="_blank" rel="noopener" style="text-decoration:none;"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg> Cuentas bancarias</a>
+      </div>
 
-      <button class="nav-item" data-vista="plantilla">
-        <span class="nav-numero">02</span>
-        <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9h18M9 9v11"/></svg>
-        Plantilla de pagos
-      </button>
-
-      <button class="nav-item" data-vista="pac">
-        <span class="nav-numero">03</span>
-        <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
-        Cuadre PAC
-      </button>
-
-      <button class="nav-item" data-vista="estadocuenta">
-        <span class="nav-numero">04</span>
-        <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 9v11"/><circle cx="6.3" cy="6.5" r="0.6" fill="currentColor" stroke="none"/></svg>
-        Estado de cuenta
-      </button>
-      <button class="nav-item" data-vista="historico">
-        <span class="nav-numero">05</span>
-        <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9h18M3 15h18M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
-        Histórico de Pagos
-      </button>
-      <button class="nav-item" data-vista="presupuestal" style="border-left:3px solid #667eea; padding-left:15px;">
-        <span class="nav-numero">06</span>
-        <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h18M3 6h18M3 18h18M8 3v18M16 3v18"/></svg>
-        Análisis Presupuestal
-      </button>
-          <button class="nav-item" data-vista="contratacion">
-        <span class="nav-numero">07</span>
-        <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 12h6M9 16h6M9 8h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>
-        Contratación
-      </button>
-
-          <button class="nav-item" data-vista="planeacion">
-        <span class="nav-numero">08</span>
-        <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-        Planeación
-      </button>
-
-          <button class="nav-item" data-vista="ciberseguridad">
-        <span class="nav-numero">09</span>
-        <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l7 4v6c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
-        Ciberseguridad
-      </button>
-
-          <button class="nav-item" data-vista="licencias">
-        <span class="nav-numero">10</span>
-        <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M15 7a4 4 0 11-8 0 4 4 0 018 0z"/><path d="M11 11l7 7 2-2-2-2 2-2-3-3"/></svg>
-        Licencias
-      </button>
-
-        <button class="nav-item" data-vista="validacion">
-          <span class="nav-numero">11</span>
-          <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/></svg>
-          Validación de plantilla
-        </button>
-
-        <button class="nav-item" data-vista="oxp">
-          <span class="nav-numero">12</span>
-          <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 9v11"/></svg>
-          CDP-CRP de OXP
-        </button>
-
-        <a class="nav-item" href="cuentas_bancarias.html" target="_blank" rel="noopener" style="text-decoration:none;">
-          <span class="nav-numero">$</span>
-          <svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>
-          Cuentas bancarias
-        </a>
-
+      <button class="nav-item" data-vista="estadocuenta"><span class="nav-numero">02</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 9v11"/><circle cx="6.3" cy="6.5" r="0.6" fill="currentColor" stroke="none"/></svg> Estados de Cuenta</button>
+      <button class="nav-item" data-vista="historico"><span class="nav-numero">03</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9h18M3 15h18M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg> Históricos de Pagos</button>
+      <button class="nav-item" data-vista="presupuestal"><span class="nav-numero">04</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h18M3 6h18M3 18h18M8 3v18M16 3v18"/></svg> Análisis Presupuestal</button>
+      <button class="nav-item" data-vista="contratacion"><span class="nav-numero">05</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 12h6M9 16h6M9 8h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg> Contratación</button>
+      <button class="nav-item" data-vista="planeacion"><span class="nav-numero">06</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> Planeación</button>
+      <button class="nav-item" data-vista="ciberseguridad"><span class="nav-numero">07</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l7 4v6c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg> Ciberseguridad</button>
+      <button class="nav-item" data-vista="licencias"><span class="nav-numero">08</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M15 7a4 4 0 11-8 0 4 4 0 018 0z"/><path d="M11 11l7 7 2-2-2-2 2-2-3-3"/></svg> Licencias</button>
+      <button class="nav-item" data-vista="oxp"><span class="nav-numero">09</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 9v11"/></svg> CDP-CRP de OXP</button>
     </nav>
 
     <div class="sidebar-pie">
       Plataforma interna de apoyo a la gestión presupuestal y de pagos a contratistas.
+      <div class="copyright">Derechos Reservados · XBOG SMART 2026</div>
     </div>
   </aside>
 
@@ -117,7 +71,7 @@
 
     <header class="topbar">
       <div class="topbar-titulos">
-        <span class="topbar-eyebrow" id="eyebrow-modulo">Módulo 01</span>
+        <span class="topbar-eyebrow" id="eyebrow-modulo">Módulo 1 · Trámite de Pagos</span>
         <h1 id="titulo-modulo">Extracción de causaciones</h1>
       </div>
       <div class="topbar-meta">
