@@ -27,9 +27,9 @@
   <aside class="sidebar">
     <div class="marca">
       <svg class="sello" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="24" cy="24" r="22" stroke="#C9A227" stroke-width="1.5"/>
-        <circle cx="24" cy="24" r="17" stroke="#C9A227" stroke-width="1"/>
-        <path d="M24 12L27.5 20.5L36 21.3L29.5 27L31.5 35.5L24 30.8L16.5 35.5L18.5 27L12 21.3L20.5 20.5L24 12Z" fill="#C9A227"/>
+        <circle cx="24" cy="24" r="22" stroke="#FFD100" stroke-width="1.5"/>
+        <circle cx="24" cy="24" r="17" stroke="#FFD100" stroke-width="1"/>
+        <path d="M24 12L27.5 20.5L36 21.3L29.5 27L31.5 35.5L24 30.8L16.5 35.5L18.5 27L12 21.3L20.5 20.5L24 12Z" fill="#FFD100"/>
       </svg>
       <div class="marca-texto">
         <p class="marca-xbog">XBOG <span class="smart">SMART</span></p>
@@ -473,7 +473,7 @@
       <div style="max-width:1200px; margin:0 auto;">
         <!-- PANTALLA DE CARGA -->
         <div id="pantalla-carga" style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:400px; padding:40px;">
-          <div style="background:linear-gradient(135deg, #1a2742 0%, #1e3a5f 100%); border-radius:16px; padding:40px; text-align:center; color:white; max-width:500px;">
+          <div style="background:linear-gradient(135deg, #A50D24 0%, #E30613 100%); border-radius:16px; padding:40px; text-align:center; color:white; max-width:500px;">
             <div style="font-size:48px; margin-bottom:20px;">📊</div>
             <h2 style="margin:0 0 10px; font-size:24px; font-weight:bold;">Histórico de Pagos</h2>
             <p style="margin:0 0 15px; font-size:13px; color:rgba(255,255,255,0.7);">Carga el reporte SAP Distrital. <strong style="color:#5dade2;">7 gráficas + buscador inteligente</strong></p>
@@ -489,7 +489,7 @@
         <!-- PANTALLA PRINCIPAL -->
         <div id="pantalla-principal" style="display:none;">
           <!-- HEADER CON MÉTRICAS -->
-          <div style="background:linear-gradient(135deg, #1a2742 0%, #1e3a5f 100%); border-radius:12px; padding:25px; margin-bottom:25px; color:white;">
+          <div style="background:linear-gradient(135deg, #A50D24 0%, #E30613 100%); border-radius:12px; padding:25px; margin-bottom:25px; color:white;">
             <div style="margin-bottom:20px;">
               <div style="font-size:10px; color:#5dade2; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">📊 SAP Distrital · FDL Usme</div>
               <h1 style="margin:0; font-size:28px; font-weight:bold;">Histórico de Pagos · <span id="rango-ejercicios"></span></h1>
@@ -500,7 +500,7 @@
 
           <!-- FILTROS -->
           <div style="background:white; border-radius:12px; padding:20px; margin-bottom:20px; box-shadow:0 2px 10px rgba(0,0,0,.06);">
-            <div style="font-size:12px; font-weight:700; color:#1a2742; margin-bottom:15px;">🔍 Filtros de búsqueda</div>
+            <div style="font-size:12px; font-weight:700; color:#A50D24; margin-bottom:15px;">🔍 Filtros de búsqueda</div>
             <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; margin-bottom:15px;">
               <input type="text" id="filtro-contratista" placeholder="👤 Contratista, NIT o proveedor..." style="padding:10px; border:1.5px solid #e8edf2; border-radius:8px; font-size:12px;">
               <input type="text" id="filtro-referencia" placeholder="📄 Contrato / Referencia..." style="padding:10px; border:1.5px solid #e8edf2; border-radius:8px; font-size:12px;">
@@ -511,7 +511,7 @@
               </select>
               <button id="btn-limpiar" style="padding:10px; background:#e74c3c; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">🔄 Limpiar</button>
             </div>
-            <div id="ficha-contratista" style="display:none; background:linear-gradient(135deg, #1e3a5f 0%, #1a2742 100%); border-radius:10px; padding:20px; color:white; margin-bottom:15px; border-left:4px solid #5dade2;">
+            <div id="ficha-contratista" style="display:none; background:linear-gradient(135deg, #E30613 0%, #A50D24 100%); border-radius:10px; padding:20px; color:white; margin-bottom:15px; border-left:4px solid #FFD100;">
               <div style="font-size:10px; color:#5dade2; text-transform:uppercase; margin-bottom:10px;">CONTRATISTA ENCONTRADO</div>
               <h3 id="contratista-nombre" style="margin:0 0 8px; font-size:20px; font-weight:bold;"></h3>
               <div id="contratista-nit" style="color:rgba(255,255,255,0.7); font-size:12px; margin-bottom:15px;"></div>
@@ -519,10 +519,10 @@
               <div id="contratista-asignaciones" style="margin-top:15px; font-size:11px; color:rgba(255,255,255,0.8);"></div>
             </div>
             <div style="display:flex; gap:10px;">
-              <button id="btn-buscar" style="flex:2; padding:12px; background:#667eea; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold; font-size:14px; box-shadow:0 4px 12px rgba(102,126,234,0.4);">🔍 BUSCAR</button>
-              <button id="btn-graficas" style="flex:1; padding:12px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">📈 Gráficas</button>
-              <button id="btn-tabla" style="flex:1; padding:12px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer;">📋 Tabla</button>
-              <button id="btn-descargar" style="flex:1; padding:12px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer;">⬇ Descargar</button>
+              <button id="btn-buscar" style="flex:2; padding:12px; background:#E30613; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold; font-size:14px; box-shadow:0 4px 12px rgba(227,6,19,0.4);">🔍 BUSCAR</button>
+              <button id="btn-graficas" style="flex:1; padding:12px; background:#FFD100; color:#7A0A18; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">📈 Gráficas</button>
+              <button id="btn-tabla" style="flex:1; padding:12px; background:#FFD100; color:#7A0A18; border:none; border-radius:8px; cursor:pointer;">📋 Tabla</button>
+              <button id="btn-descargar" style="flex:1; padding:12px; background:#FFD100; color:#7A0A18; border:none; border-radius:8px; cursor:pointer;">⬇ Descargar</button>
             </div>
           </div>
 
@@ -554,7 +554,7 @@
       <div style="max-width:1400px; margin:0 auto;">
         <!-- PANTALLA CARGA -->
         <div id="pantalla-carga-crp" style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:400px;">
-          <div style="background:linear-gradient(135deg, #1a2742 0%, #1e3a6e 100%); border-radius:16px; padding:40px; text-align:center; color:white; max-width:550px;">
+          <div style="background:linear-gradient(135deg, #A50D24 0%, #E30613 100%); border-radius:16px; padding:40px; text-align:center; color:white; max-width:550px;">
             <div style="font-size:48px; margin-bottom:20px;">📊</div>
             <h2 style="margin:0 0 15px; font-size:26px; font-weight:bold;">Análisis Presupuestal CRP</h2>
             <p style="margin:0 0 20px; font-size:13px; color:rgba(255,255,255,0.7);">Carga el reporte SAP con <strong style="color:#5dade2;">20 variables presupuestales</strong></p>
@@ -569,7 +569,7 @@
 
         <!-- PANTALLA PRINCIPAL -->
         <div id="pantalla-principal-crp" style="display:none;">
-          <div style="background:linear-gradient(135deg, #1a2742 0%, #1e3a6e 100%); border-radius:12px; padding:20px; margin-bottom:20px; color:white;">
+          <div style="background:linear-gradient(135deg, #A50D24 0%, #E30613 100%); border-radius:12px; padding:20px; margin-bottom:20px; color:white;">
             <h1 style="margin:0 0 8px; font-size:24px;">Análisis Presupuestal CRP</h1>
             <div style="font-size:12px; color:rgba(255,255,255,0.6);" id="info-crp"></div>
           </div>
@@ -586,9 +586,9 @@
               <select id="filtro-crp-mod" style="padding:10px; border:1.5px solid #e8edf2; border-radius:8px; font-size:12px;"><option>Modalidad</option></select>
             </div>
             <div style="display:flex; gap:10px;">
-              <button id="btn-filtrar-crp" style="flex:2; padding:10px; background:#667eea; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">🔍 BUSCAR</button>
-              <button id="btn-graf-crp" style="flex:1; padding:10px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer;">📈 Gráficas</button>
-              <button id="btn-tab-crp" style="flex:1; padding:10px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer;">📋 Tabla</button>
+              <button id="btn-filtrar-crp" style="flex:2; padding:10px; background:#E30613; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">🔍 BUSCAR</button>
+              <button id="btn-graf-crp" style="flex:1; padding:10px; background:#FFD100; color:#7A0A18; border:none; border-radius:8px; cursor:pointer;">📈 Gráficas</button>
+              <button id="btn-tab-crp" style="flex:1; padding:10px; background:#FFD100; color:#7A0A18; border:none; border-radius:8px; cursor:pointer;">📋 Tabla</button>
             </div>
           </div>
 
@@ -619,7 +619,7 @@
           <input type="file" id="carga-07" accept=".xlsx,.xls" style="padding:10px; border:1px solid #ddd; border-radius:8px; width:100%;" />
         </div>
         <div id="pantalla-carga-07" style="display:flex; justify-content:center; padding:40px;">
-          <div style="background:linear-gradient(135deg,#1a2742,#1e3a6e); border-radius:16px; padding:40px; text-align:center; color:white; max-width:550px;">
+          <div style="background:linear-gradient(135deg,#A50D24,#E30613); border-radius:16px; padding:40px; text-align:center; color:white; max-width:550px;">
             <div style="font-size:48px; margin-bottom:15px;">📋</div>
             <h2 style="margin:0 0 15px; font-size:26px;">Contratación — Análisis Integral</h2>
             <p style="font-size:13px; color:rgba(255,255,255,0.7);">Carga el consolidado de contratos. <strong style="color:#5dade2;">9 campos · filtros · 5 gráficas</strong></p>
@@ -638,7 +638,7 @@
           <input type="file" id="carga-08" accept=".xlsx,.xls" style="padding:10px; border:1px solid #ddd; border-radius:8px; width:100%;" />
         </div>
         <div id="pantalla-carga-08" style="display:flex; justify-content:center; padding:40px;">
-          <div style="background:linear-gradient(135deg,#1a2742,#1e3a6e); border-radius:16px; padding:40px; text-align:center; color:white; max-width:550px;">
+          <div style="background:linear-gradient(135deg,#A50D24,#E30613); border-radius:16px; padding:40px; text-align:center; color:white; max-width:550px;">
             <div style="font-size:48px; margin-bottom:15px;">📐</div>
             <h2 style="margin:0 0 15px; font-size:26px;">Planeación PDL 2026</h2>
             <p style="font-size:13px; color:rgba(255,255,255,0.7);">Carga hojas PDLU + EJECUCIONES. <strong style="color:#5dade2;">6 gráficas · análisis · semáforo</strong></p>
