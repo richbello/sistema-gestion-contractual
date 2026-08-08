@@ -1,10 +1,10 @@
 /* ==========================================================================
- * Módulo 12 · CDP-CRP de OXP  (submenú: CRP OXP)
+ * Módulo 12 · CDP-CRP de OXP  (CRP + CDP con conversión de rubros)
  * --------------------------------------------------------------------------
- * Lee el reporte CRP en el NAVEGADOR con SheetJS (window.XLSX), filtra OXP
- * (Com.Sin.Aut.Giro > 0), mapea a claves canónicas (incluye N° Interno CRP y
- * N° Posición CRP para el agrupamiento) y envía solo las filas necesarias al
- * backend, que agrupa por CRP y devuelve el .xlsx diligenciado.
+ * Pestañas CRP y CDP: lee el reporte CRP en el NAVEGADOR con SheetJS,
+ * filtra OXP (Com.Sin.Aut.Giro > 0), mapea a claves canónicas (incluye
+ * N° Interno CRP, N° Posición CRP y Rubro para conversión). El backend
+ * agrupa por CRP y aplica la conversión de rubros en CDP.
  *
  * Reutiliza helpers globales de main.js:
  *   API_BASE, configurarDropzoneUnico, mostrarAlerta, mostrarEstado, crearMetrica
@@ -12,7 +12,7 @@
 (function () {
   "use strict";
 
-  // Encabezado del reporte CRP -> clave canónica (insensible a may/tildes/espacios/punt.)
+  // Encabezado del reporte CRP -> clave canónica
   var MAPEO_FUENTE = {
     importe:         ["Com.Sin.Aut.Giro"],
     objeto:          ["Objeto"],
@@ -23,9 +23,12 @@
     id_benef:        ["Número Doc. BP Beneficiario"],
     id_solicitante:  ["ID Solicitante"],
     id_responsable:  ["ID Responsable"],
-    interno_crp:     ["N° Interno CRP"],     // clave de agrupamiento
-    pos_crp:         ["N° Posición CRP"],     // -> Posición (col B)
-    num_crp:         ["Número de CRP"]        // -> Num. Ext. Entidad (col V)
+    interno_crp:     ["N° Interno CRP"],
+    pos_crp:         ["N° Posición CRP"],
+    num_crp:         ["Número de CRP"],
+    rubro:           ["Rubro"],
+    elemento_pep:    ["Elemento PEP"],
+    fondos:          ["Fondos", "Fondo"]   // puede ser "Fondos" o "Fondo"
   };
 
   function norm(t) {
@@ -64,7 +67,7 @@
       var row = aoa[r];
       if (!row || row.every(function (c) { return c === null || c === ""; })) continue;
       total++;
-      if (aNumero(row[colDe.importe]) <= 0) continue;   // filtro OXP
+      if (aNumero(row[colDe.importe]) <= 0) continue;
       var obj = {};
       Object.keys(colDe).forEach(function (clave) {
         var v = row[colDe[clave]];
@@ -85,11 +88,7 @@
     URL.revokeObjectURL(a.href);
   }
 
-  // --- Inicialización (los <script> cargan al final: el DOM ya existe) ----
-  var input = document.getElementById("input-oxp");
-  if (!input) return;
-
-  // Pestañas del submenú (CRP / CDP)
+  // ========== PESTAÑAS ==========
   Array.prototype.forEach.call(document.querySelectorAll(".oxp-tab"), function (tab) {
     tab.addEventListener("click", function () {
       if (tab.disabled) return;
@@ -100,67 +99,136 @@
     });
   });
 
+  // ========== CRP OXP ==========
   if (typeof configurarDropzoneUnico === "function")
     configurarDropzoneUnico("drop-oxp", "input-oxp", "lista-oxp");
 
-  var estado = { filas: [], total: 0, grupos: 0 };
-  var resumen = document.getElementById("resumen-oxp");
-  var btnCrp  = document.getElementById("btn-oxp-crp");
-  var metricas = document.getElementById("metricas-oxp");
+  var estado_crp = { filas: [], total: 0, grupos: 0 };
+  var input_crp = document.getElementById("input-oxp");
+  var resumen_crp = document.getElementById("resumen-oxp");
+  var btn_crp = document.getElementById("btn-oxp-crp");
+  var metricas_crp = document.getElementById("metricas-oxp");
 
-  input.addEventListener("change", function (e) {
-    var file = e.target.files[0];
-    if (!file) return;
-    mostrarAlerta("alerta-oxp", "");
-    document.getElementById("resultados-oxp").classList.remove("visible");
-    btnCrp.disabled = true;
-    resumen.textContent = "Leyendo reporte…";
-    var reader = new FileReader();
-    reader.onload = function (ev) {
-      try {
-        estado = procesarReporte(ev.target.result);
-        resumen.innerHTML =
-          "Filas en reporte: <b>" + estado.total + "</b> · " +
-          "A constituir (saldo &gt; 0): <b>" + estado.filas.length + "</b> · " +
-          "CRP únicos: <b>" + estado.grupos + "</b>";
-        var hay = estado.filas.length > 0;
-        btnCrp.disabled = !hay;
-        if (!hay) mostrarAlerta("alerta-oxp", "No hay filas con saldo pendiente (Com.Sin.Aut.Giro > 0).");
-      } catch (err) {
-        resumen.textContent = "";
-        mostrarAlerta("alerta-oxp", err.message);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  });
-
-  btnCrp.addEventListener("click", function () {
-    mostrarAlerta("alerta-oxp", "");
-    btnCrp.disabled = true;
-    mostrarEstado("estado-oxp", true);
-    fetch(API_BASE + "/api/oxp/crp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filas: estado.filas })
-    }).then(function (resp) {
-      if (!resp.ok) return resp.text().then(function (t) { throw new Error(t || ("HTTP " + resp.status)); });
-      var n = resp.headers.get("X-OXP-Registros") || estado.filas.length;
-      return resp.blob().then(function (blob) { return { blob: blob, n: n }; });
-    }).then(function (res) {
-      descargarBlob(res.blob, "CRP_de_OXP_diligenciado.xlsx");
-      metricas.innerHTML = "";
-      metricas.appendChild(crearMetrica(estado.total, "Filas en reporte"));
-      metricas.appendChild(crearMetrica(estado.grupos, "CRP únicos", "verde"));
-      metricas.appendChild(crearMetrica(res.n, "Filas escritas", "ocre"));
-      document.getElementById("resultados-oxp").classList.add("visible");
-    }).catch(function (err) {
-      mostrarAlerta("alerta-oxp", "Error: " + err.message);
-    }).finally(function () {
-      btnCrp.disabled = false;
-      mostrarEstado("estado-oxp", false);
+  if (input_crp) {
+    input_crp.addEventListener("change", function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      mostrarAlerta("alerta-oxp", "");
+      document.getElementById("resultados-oxp").classList.remove("visible");
+      btn_crp.disabled = true;
+      resumen_crp.textContent = "Leyendo reporte…";
+      var reader = new FileReader();
+      reader.onload = function (ev) {
+        try {
+          estado_crp = procesarReporte(ev.target.result);
+          resumen_crp.innerHTML =
+            "Filas en reporte: <b>" + estado_crp.total + "</b> · " +
+            "A constituir (saldo &gt; 0): <b>" + estado_crp.filas.length + "</b> · " +
+            "CRP únicos: <b>" + estado_crp.grupos + "</b>";
+          var hay = estado_crp.filas.length > 0;
+          btn_crp.disabled = !hay;
+          if (!hay) mostrarAlerta("alerta-oxp", "No hay filas con saldo pendiente.");
+        } catch (err) {
+          resumen_crp.textContent = "";
+          mostrarAlerta("alerta-oxp", err.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
     });
-  });
 
-  // Despierta el backend (Render duerme tras ~15 min)
+    btn_crp.addEventListener("click", function () {
+      mostrarAlerta("alerta-oxp", "");
+      btn_crp.disabled = true;
+      mostrarEstado("estado-oxp", true);
+      fetch(API_BASE + "/api/oxp/crp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filas: estado_crp.filas })
+      }).then(function (resp) {
+        if (!resp.ok) return resp.text().then(function (t) { throw new Error(t || ("HTTP " + resp.status)); });
+        var n = resp.headers.get("X-OXP-Registros") || estado_crp.filas.length;
+        return resp.blob().then(function (blob) { return { blob: blob, n: n }; });
+      }).then(function (res) {
+        descargarBlob(res.blob, "CRP_de_OXP_diligenciado.xlsx");
+        metricas_crp.innerHTML = "";
+        metricas_crp.appendChild(crearMetrica(estado_crp.total, "Filas en reporte"));
+        metricas_crp.appendChild(crearMetrica(estado_crp.grupos, "CRP únicos", "verde"));
+        metricas_crp.appendChild(crearMetrica(res.n, "Filas escritas", "ocre"));
+        document.getElementById("resultados-oxp").classList.add("visible");
+      }).catch(function (err) {
+        mostrarAlerta("alerta-oxp", "Error: " + err.message);
+      }).finally(function () {
+        btn_crp.disabled = false;
+        mostrarEstado("estado-oxp", false);
+      });
+    });
+  }
+
+  // ========== CDP OXP ==========
+  if (typeof configurarDropzoneUnico === "function")
+    configurarDropzoneUnico("drop-oxp-cdp", "input-oxp-cdp", "lista-oxp-cdp");
+
+  var estado_cdp = { filas: [], total: 0, grupos: 0 };
+  var input_cdp = document.getElementById("input-oxp-cdp");
+  var resumen_cdp = document.getElementById("resumen-oxp-cdp");
+  var btn_cdp = document.getElementById("btn-oxp-cdp");
+  var metricas_cdp = document.getElementById("metricas-oxp-cdp");
+
+  if (input_cdp) {
+    input_cdp.addEventListener("change", function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      mostrarAlerta("alerta-oxp-cdp", "");
+      document.getElementById("resultados-oxp-cdp").classList.remove("visible");
+      btn_cdp.disabled = true;
+      resumen_cdp.textContent = "Leyendo reporte…";
+      var reader = new FileReader();
+      reader.onload = function (ev) {
+        try {
+          estado_cdp = procesarReporte(ev.target.result);
+          resumen_cdp.innerHTML =
+            "Filas en reporte: <b>" + estado_cdp.total + "</b> · " +
+            "A constituir (saldo &gt; 0): <b>" + estado_cdp.filas.length + "</b> · " +
+            "CRP únicos: <b>" + estado_cdp.grupos + "</b><br><em style='color:#7c3a3a;'>Los rubros se convertirán según la tabla (ej. O230689 → O230690).</em>";
+          var hay = estado_cdp.filas.length > 0;
+          btn_cdp.disabled = !hay;
+          if (!hay) mostrarAlerta("alerta-oxp-cdp", "No hay filas con saldo pendiente.");
+        } catch (err) {
+          resumen_cdp.textContent = "";
+          mostrarAlerta("alerta-oxp-cdp", err.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    btn_cdp.addEventListener("click", function () {
+      mostrarAlerta("alerta-oxp-cdp", "");
+      btn_cdp.disabled = true;
+      mostrarEstado("estado-oxp-cdp", true);
+      fetch(API_BASE + "/api/oxp/cdp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filas: estado_cdp.filas })
+      }).then(function (resp) {
+        if (!resp.ok) return resp.text().then(function (t) { throw new Error(t || ("HTTP " + resp.status)); });
+        var n = resp.headers.get("X-OXP-Registros") || estado_cdp.filas.length;
+        return resp.blob().then(function (blob) { return { blob: blob, n: n }; });
+      }).then(function (res) {
+        descargarBlob(res.blob, "CDP_de_OXP_diligenciado.xlsx");
+        metricas_cdp.innerHTML = "";
+        metricas_cdp.appendChild(crearMetrica(estado_cdp.total, "Filas en reporte"));
+        metricas_cdp.appendChild(crearMetrica(estado_cdp.grupos, "CRP únicos", "verde"));
+        metricas_cdp.appendChild(crearMetrica(res.n, "Filas escritas", "ocre"));
+        document.getElementById("resultados-oxp-cdp").classList.add("visible");
+      }).catch(function (err) {
+        mostrarAlerta("alerta-oxp-cdp", "Error: " + err.message);
+      }).finally(function () {
+        btn_cdp.disabled = false;
+        mostrarEstado("estado-oxp-cdp", false);
+      });
+    });
+  }
+
+  // Despierta el backend
   if (API_BASE) fetch(API_BASE + "/api/salud").catch(function () {});
 })();
