@@ -25,10 +25,12 @@
     id_responsable:  ["ID Responsable"],
     interno_crp:     ["N° Interno CRP"],
     pos_crp:         ["N° Posición CRP"],
-    num_crp:         ["Número de CRP"],
-    rubro:           ["Rubro"],
-    elemento_pep:    ["Elemento PEP"],
-    fondos:          ["Fondos", "Fondo"]   // puede ser "Fondos" o "Fondo"
+    num_cdp:         ["Número de CDP"],      // -> col A del CDP y Objeto
+    num_crp:         ["Número de CRP"],      // -> Objeto
+    rubro:           ["Rubro"],              // -> Posición Presupuestal (fallback)
+    nuevo_rubro:     ["Nuevo Rubro"],        // -> Posición Presupuestal (si lleno)
+    elemento_pep:    ["Elemento PEP"],       // -> determina Posición Presupuestal
+    fondos:          ["Fondos", "Fondo"]
   };
 
   function norm(t) {

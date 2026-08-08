@@ -155,26 +155,55 @@ def _convertir_rubro(rubro_origen):
     return RUBRO_MAPEO.get(v, v)   # si no está en el mapeo, deja el original
 
 
+def _extraer_tipo_contrato(objeto):
+    """Extrae el tipo de contrato del objeto original.
+
+    En el original aparece '... POR PAGAR EL/LA <TIPO> <No>-<año> CUYO OBJETO ES ...'.
+    Se toma <TIPO> (p.ej. 'CONTRATO DE OBRA', 'CONTRATO DE PRESTACION DE SERVICIOS'):
+    las palabras tras 'POR PAGAR EL/LA' hasta el primer token con dígito o 'CUYO'.
+    """
+    if not objeto:
+        return "CONTRATO DE PRESTACION DE SERVICIOS"
+    txt = str(objeto)
+    marcador = "POR PAGAR EL/LA"
+    idx = txt.find(marcador)
+    if idx == -1:
+        return "CONTRATO DE PRESTACION DE SERVICIOS"
+    resto = txt[idx + len(marcador):].strip()
+    palabras = []
+    for w in resto.split():
+        wu = w.upper()
+        if wu.startswith("CUYO"):
+            break
+        if any(ch.isdigit() for ch in w):
+            break
+        palabras.append(w)
+    tipo = " ".join(palabras).strip()
+    return tipo or "CONTRATO DE PRESTACION DE SERVICIOS"
+
+
 def _reconstruir_objeto(num_cdp, num_crp, objeto_original):
     """Reconstruye la columna Objeto con formato OXP.
-    
-    Patrón:
-    REEMPLAZA CDP [num_cdp] Y CRP [num_crp] AL CONSTITUIRSE COMO OBLIGACION 
-    POR PAGAR EL/LA CONTRATO DE PRESTACION DE SERVICIOS CUYO OBJETO ES [objeto_original]
+
+    Patrón (verificado contra referencia):
+    REEMPLAZA CDP <num_cdp> Y CRP <num_crp> AL CONSTITUIRSE COMO OBLIGACION
+    POR PAGAR EL/LA <TIPO_CONTRATO> CUYO OBJETO ES <objeto_original>
+
+    <TIPO_CONTRATO> se extrae del propio objeto original.
     """
     if not objeto_original:
         return ""
-    
-    num_cdp_str = str(num_cdp).strip() if num_cdp else ""
-    num_crp_str = str(num_crp).strip() if num_crp else ""
+
+    num_cdp_str = str(num_cdp).strip() if num_cdp not in (None, "") else ""
+    num_crp_str = str(num_crp).strip() if num_crp not in (None, "") else ""
     obj_str = str(objeto_original).strip()
-    
-    # Si faltan CDP o CRP, usa el objeto original
+
     if not num_cdp_str or not num_crp_str:
         return obj_str
-    
+
+    tipo = _extraer_tipo_contrato(obj_str)
     return (f"REEMPLAZA CDP {num_cdp_str} Y CRP {num_crp_str} AL CONSTITUIRSE COMO "
-            f"OBLIGACION POR PAGAR EL/LA CONTRATO DE PRESTACION DE SERVICIOS CUYO OBJETO ES {obj_str}")
+            f"OBLIGACION POR PAGAR EL/LA {tipo} CUYO OBJETO ES {obj_str}")
 
 
 def _obtener_elemento_pep(rubro_convertido):
@@ -320,58 +349,86 @@ def llenar_crp_vf(filas, plantilla_path=None):
 #   - Num. Ext. Entidad (S) = consecutivo por fila desde 1.
 # ----------------------------------------------------------------------------
 FONDOS_FIJO       = "1-200-I071"
-CUENTA_MAYOR_FIJA = "7990990000"
+CUENTA_MAYOR_FIJA = 7990990000            # numérico (confirmado en referencia)
 NUMERO_OFICIO     = "constitución OxP"
-PERIODO_CDP       = "2026"
+PERIODO_CDP       = 2026                   # numérico
+FECHA_DOCUMENTO_CDP = "05.01.2026"        # fija (confirmada en referencia)
+FECHA_CONTAB_CDP    = "05.01.2026"        # fija
+
+
+def _calcular_posicion_presupuestal(nuevo_rubro, rubro, elemento_pep):
+    """Determina la Posición Presupuestal del CDP (regla verificada 886/886).
+
+    1. Si 'Nuevo Rubro' (col R del reporte) viene lleno -> se usa tal cual.
+    2. Si el Elemento PEP del reporte empieza con 'PM' (inversión) -> O230689.
+    3. Si el Elemento PEP contiene 'OBLI_INV' -> O230690.
+    4. Si el Elemento PEP es de funcionamiento (PO/.../0000000005):
+         rubros cortos (O219001/O219002) -> O219002 ; detallados -> O219001
+         (se resuelve con RUBRO_MAPEO).
+    5. Fallback -> rubro original.
+    """
+    if nuevo_rubro not in (None, ""):
+        return str(nuevo_rubro).strip()
+    pep = str(elemento_pep).strip() if elemento_pep else ""
+    if pep.startswith("PM"):
+        return "O230689"
+    if "OBLI_INV" in pep:
+        return "O230690"
+    if pep == "PO/0005/0001/0000000005":
+        return RUBRO_MAPEO.get(str(rubro).strip(), "O219001")
+    return str(rubro).strip() if rubro else None
 
 
 def llenar_cdp_oxp(filas, plantilla_path=None):
+    """Rellena la hoja CDP directamente desde las filas del reporte CRP.
+
+    Cada fila (dict con claves canónicas) representa un registro OXP ya filtrado
+    (Com.Sin.Aut.Giro > 0). No se agrupa: una fila del reporte = una fila del CDP,
+    en el mismo orden. Reglas verificadas 886/886 contra el formato de referencia.
+    """
     plantilla_path = plantilla_path or PLANTILLA_PATH
     wb = openpyxl.load_workbook(plantilla_path)
     ws = wb["CDP"]
-    hoy = _hoy()
-
-    # Agrupa igual que CRP (por interno_crp)
-    grupos = _agrupar_por_crp(filas)
 
     r = 2               # fila de datos (encabezado en fila 1)
     num_ext = 1         # Num. Ext. Entidad: consecutivo global desde 1
-    for consecutivo, grupo in enumerate(grupos, start=1):
-        for pos_idx, fila in enumerate(grupo, start=1):
-            pos = _g(fila, "pos_crp")
-            posicion = _num(pos) if pos not in (None, "") else pos_idx
+    for fila in filas:
+        num_cdp = _g(fila, "num_cdp")
+        num_crp = _g(fila, "num_crp")
 
-            # Posición Presupuestal (I) = Nuevo Rubro tras conversión
-            rubro_nuevo = _convertir_rubro(_g(fila, "rubro"))
+        # Posición Presupuestal (I): regla verificada
+        pos_pres = _calcular_posicion_presupuestal(
+            _g(fila, "nuevo_rubro"), _g(fila, "rubro"), _g(fila, "elemento_pep"))
 
-            # Objeto (N): en OXP el CDP y el CRP nuevos comparten el consecutivo
-            objeto_txt = _reconstruir_objeto(consecutivo, consecutivo,
-                                             _g(fila, "objeto"))
+        # Elemento PEP (K): derivado del rubro final
+        elemento_pep = _obtener_elemento_pep(pos_pres)
 
-            ws.cell(row=r, column=1,  value=consecutivo)                # A CDP
-            ws.cell(row=r, column=2,  value=posicion)                   # B Posición
-            ws.cell(row=r, column=3,  value=hoy)                        # C Fecha Documento
-            ws.cell(row=r, column=4,  value=hoy)                        # D Fecha Contabilización
-            ws.cell(row=r, column=5,  value="CP")                       # E Clase Documento
-            ws.cell(row=r, column=6,  value=SOCIEDAD_FIJA)              # F Sociedad
-            ws.cell(row=r, column=7,  value=MONEDA)                     # G Moneda
-            ws.cell(row=r, column=8,  value=_num(_g(fila, "importe")))  # H importe Original
-            ws.cell(row=r, column=9,  value=rubro_nuevo)               # I Posición Presupuestal
-            ws.cell(row=r, column=10, value=FONDOS_FIJO)               # J Fondos
-            elemento_pep = _obtener_elemento_pep(rubro_nuevo)
-            if elemento_pep:
-                ws.cell(row=r, column=11, value=elemento_pep)          # K Elemento PEP
-            ws.cell(row=r, column=12, value=PERIODO_CDP)               # L Período Presupuestal
-            ws.cell(row=r, column=13, value=CUENTA_MAYOR_FIJA)         # M Cuenta de Mayor
-            ws.cell(row=r, column=14, value=objeto_txt)                # N Objeto
-            ws.cell(row=r, column=15, value=NUMERO_OFICIO)             # O Número Oficio
-            ws.cell(row=r, column=16, value=hoy)                       # P Fecha Oficio
-            ws.cell(row=r, column=17, value=_g(fila, "id_solicitante"))  # Q ID Solicitante
-            ws.cell(row=r, column=18, value=_g(fila, "id_responsable"))  # R ID Responsable
-            ws.cell(row=r, column=19, value=num_ext)                   # S Num. Ext. Entidad
+        # Objeto (N): "REEMPLAZA CDP <n> Y CRP <n> AL CONSTITUIRSE ... CUYO OBJETO ES <obj>"
+        objeto_txt = _reconstruir_objeto(num_cdp, num_crp, _g(fila, "objeto"))
 
-            r += 1
-            num_ext += 1
+        ws.cell(row=r, column=1,  value=_num(num_cdp))              # A CDP (Número de CDP del reporte)
+        ws.cell(row=r, column=2,  value=1)                         # B Posición (siempre 1)
+        ws.cell(row=r, column=3,  value=FECHA_DOCUMENTO_CDP)       # C Fecha Documento (fija)
+        ws.cell(row=r, column=4,  value=FECHA_CONTAB_CDP)          # D Fecha Contabilización (fija)
+        ws.cell(row=r, column=5,  value="CP")                      # E Clase Documento
+        ws.cell(row=r, column=6,  value=SOCIEDAD_FIJA)             # F Sociedad
+        ws.cell(row=r, column=7,  value=MONEDA)                    # G Moneda
+        ws.cell(row=r, column=8,  value=_num(_g(fila, "importe")))  # H importe Original
+        ws.cell(row=r, column=9,  value=pos_pres)                 # I Posición Presupuestal
+        ws.cell(row=r, column=10, value=FONDOS_FIJO)              # J Fondos
+        if elemento_pep:
+            ws.cell(row=r, column=11, value=elemento_pep)         # K Elemento PEP
+        ws.cell(row=r, column=12, value=PERIODO_CDP)              # L Período Presupuestal
+        ws.cell(row=r, column=13, value=CUENTA_MAYOR_FIJA)        # M Cuenta de Mayor
+        ws.cell(row=r, column=14, value=objeto_txt)               # N Objeto
+        ws.cell(row=r, column=15, value=NUMERO_OFICIO)            # O Número Oficio
+        ws.cell(row=r, column=16, value=FECHA_DOCUMENTO_CDP)      # P Fecha Oficio (fija, = documento)
+        ws.cell(row=r, column=17, value=_g(fila, "id_solicitante"))  # Q ID Solicitante
+        ws.cell(row=r, column=18, value=_g(fila, "id_responsable"))  # R ID Responsable
+        ws.cell(row=r, column=19, value=num_ext)                  # S Num. Ext. Entidad
+
+        r += 1
+        num_ext += 1
 
     buf = BytesIO()
     wb.save(buf)
