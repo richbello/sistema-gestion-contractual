@@ -718,6 +718,7 @@
 
       <div class="oxp-tabs">
         <button type="button" class="oxp-tab activo" data-panel="oxp-crp">CRP OXP</button>
+        <button type="button" class="oxp-tab" data-panel="oxp-cdp-loader">📋 Reporte CDP</button>
         <button type="button" class="oxp-tab" data-panel="oxp-cdp">CDP OXP</button>
       </div>
 
@@ -762,6 +763,32 @@
       </div>
 
       <div id="oxp-cdp" class="oxp-panel">
+      <!-- NUEVA SECCIÓN: CARGAR REPORTE CDP -->
+      <div id="oxp-cdp-loader" class="oxp-panel activo">
+        <form class="panel" id="form-reporte-cdp" onsubmit="return false;">
+          <div class="panel-acento-superior" style="background-color:#1d4c4c;"></div>
+          <div class="panel-cuerpo">
+            <div class="grid-form una-col">
+              <div class="campo">
+                <label>📋 Cargar Reporte CDP</label>
+                <div class="ayuda" style="background:#f0f8f0; border-left:4px solid #1d4c4c; padding:10px; margin-bottom:15px;">
+                  Reporte CDP SAP/BOGDATA. Extrae <strong>No. Interno CDP</strong> y <strong>No. Posición CDP</strong> para incluir en el formato final.
+                </div>
+                <div class="dropzone" id="drop-reporte-cdp">
+                  <input type="file" id="input-reporte-cdp" accept=".xlsx,.xls">
+                  <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+                  <div class="dropzone-texto"><strong>Arrastra el archivo</strong> o haz clic</div>
+                  <div class="dropzone-detalle">.xlsx · un solo archivo</div>
+                </div>
+                <div class="lista-archivos" id="lista-reporte-cdp"></div>
+                <div id="resumen-reporte-cdp" style="margin-top:10px; color:#1d4c4c; font-size:0.9em;"></div>
+              </div>
+            </div>
+            <div class="alerta alerta-error" id="alerta-reporte-cdp"></div>
+          </div>
+        </form>
+      </div>
+
         <form class="panel" id="form-oxp-cdp" onsubmit="return false;">
           <div class="panel-acento-superior"></div>
           <div class="panel-cuerpo">
