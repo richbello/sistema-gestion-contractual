@@ -98,7 +98,7 @@
     var colDe = {};
     Object.keys(MAPEO_CDP).forEach(function (clave) {
       for (var k = 0; k < MAPEO_CDP[clave].length; k++) {
-        var i = idx[norm(MAPEO_CDP[clave][k])];
+      // document.getElementById("resultados-oxp").classList.remove("visible");
         if (i !== undefined) { colDe[clave] = i; break; }
       }
     });
