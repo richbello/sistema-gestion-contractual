@@ -387,6 +387,12 @@ def llenar_cdp_oxp(filas, plantilla_path=None):
     wb = openpyxl.load_workbook(plantilla_path)
     ws = wb["CDP"]
 
+    # Asegurar encabezados en T y U
+    if not ws.cell(row=1, column=20).value:
+        ws.cell(row=1, column=20, value="No. Interno CDP")
+    if not ws.cell(row=1, column=21).value:
+        ws.cell(row=1, column=21, value="No. Posición CDP")
+
     r = 2               # fila de datos (encabezado en fila 1)
     num_ext = 1         # Num. Ext. Entidad: consecutivo global desde 1
     hoy = _hoy()                    # fecha REAL del día en que se genera el CDP
@@ -425,6 +431,8 @@ def llenar_cdp_oxp(filas, plantilla_path=None):
         ws.cell(row=r, column=17, value=_g(fila, "id_solicitante"))  # Q ID Solicitante
         ws.cell(row=r, column=18, value=_g(fila, "id_responsable"))  # R ID Responsable
         ws.cell(row=r, column=19, value=num_ext)                  # S Num. Ext. Entidad
+        ws.cell(row=r, column=20, value=_g(fila, "no_interno_cdp"))  # T No. Interno CDP (del reporte CDP)
+        ws.cell(row=r, column=21, value=_g(fila, "no_posicion_cdp"))  # U No. Posición CDP (del reporte CDP)
 
         r += 1
         num_ext += 1
