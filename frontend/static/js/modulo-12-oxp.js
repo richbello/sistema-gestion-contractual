@@ -33,6 +33,16 @@
     fondos:          ["Fondos", "Fondo"]
   };
 
+  // Mapeo para reporte CDP: extrae No. Interno CDP y No. Posición CDP
+  var MAPEO_CDP = {
+    no_cdp:         ["No. CDP"],
+    no_interno_cdp: ["No.Interno CDP"],
+    no_posicion_cdp: ["No.Posición CDP"]
+  };
+
+  // Almacenamiento de datos del reporte CDP
+  var datosReporteCDP = {};
+
   function norm(t) {
     if (t === null || t === undefined) return "";
     return String(t).normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
@@ -80,6 +90,37 @@
     }
     var grupos = Object.keys(gruposSet).length || filas.length;
     return { filas: filas, total: total, grupos: grupos };
+  }
+
+  function procesarReporteCDP(arrayBuffer) {
+    var wb = window.XLSX.read(arrayBuffer, { type: "array" });
+    var ws = wb.Sheets[wb.SheetNames[0]];
+    var aoa = window.XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+    if (!aoa.length) throw new Error("El reporte CDP está vacío.");
+
+    var idx = {};
+    aoa[0].forEach(function (h, i) { if (idx[norm(h)] === undefined) idx[norm(h)] = i; });
+
+    var colDe = {};
+    Object.keys(MAPEO_CDP).forEach(function (clave) {
+      for (var k = 0; k < MAPEO_CDP[clave].length; k++) {
+        var i = idx[norm(MAPEO_CDP[clave][k])];
+        if (i !== undefined) { colDe[clave] = i; break; }
+      }
+    });
+
+    var mapa = {};
+    for (var r = 1; r < aoa.length; r++) {
+      var row = aoa[r];
+      if (!row || row.every(function (c) { return c === null || c === ""; })) continue;
+      var noCdp = String(row[colDe.no_cdp] || "").trim();
+      if (!noCdp) continue;
+      mapa[noCdp] = {
+        no_interno_cdp: row[colDe.no_interno_cdp] || "",
+        no_posicion_cdp: row[colDe.no_posicion_cdp] || ""
+      };
+    }
+    return mapa;
   }
 
   function descargarBlob(blob, nombre) {
@@ -166,6 +207,36 @@
     });
   }
 
+  // ========== REPORTE CDP (carga opcional) ==========
+  if (typeof configurarDropzoneUnico === "function")
+    configurarDropzoneUnico("drop-reporte-cdp", "input-reporte-cdp", "lista-reporte-cdp");
+
+  var input_reporte_cdp = document.getElementById("input-reporte-cdp");
+  var resumen_reporte_cdp = document.getElementById("resumen-reporte-cdp");
+
+  if (input_reporte_cdp) {
+    input_reporte_cdp.addEventListener("change", function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      mostrarAlerta("alerta-reporte-cdp", "");
+      resumen_reporte_cdp.textContent = "Leyendo reporte CDP…";
+      var reader = new FileReader();
+      reader.onload = function (ev) {
+        try {
+          datosReporteCDP = procesarReporteCDP(ev.target.result);
+          var numRegistros = Object.keys(datosReporteCDP).length;
+          resumen_reporte_cdp.innerHTML =
+            "Reporte CDP cargado: <b>" + numRegistros + "</b> registros con No. Interno CDP y No. Posición CDP.<br>" +
+            "<em style='color:#1d4c4c;'>Estos datos se incluirán automáticamente en el CDP OXP generado.</em>";
+        } catch (err) {
+          resumen_reporte_cdp.textContent = "";
+          mostrarAlerta("alerta-reporte-cdp", err.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
   // ========== CDP OXP ==========
   if (typeof configurarDropzoneUnico === "function")
     configurarDropzoneUnico("drop-oxp-cdp", "input-oxp-cdp", "lista-oxp-cdp");
@@ -207,10 +278,22 @@
       mostrarAlerta("alerta-oxp-cdp", "");
       btn_cdp.disabled = true;
       mostrarEstado("estado-oxp-cdp", true);
+
+      // Enriquecer filas con datos del reporte CDP
+      var filasEnriquecidas = estado_cdp.filas.map(function (fila) {
+        var filaComp = Object.assign({}, fila);
+        if (fila.num_cdp && datosReporteCDP[String(fila.num_cdp).trim()]) {
+          var datos = datosReporteCDP[String(fila.num_cdp).trim()];
+          filaComp.no_interno_cdp = datos.no_interno_cdp;
+          filaComp.no_posicion_cdp = datos.no_posicion_cdp;
+        }
+        return filaComp;
+      });
+
       fetch(API_BASE + "/api/oxp/cdp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filas: estado_cdp.filas })
+        body: JSON.stringify({ filas: filasEnriquecidas })
       }).then(function (resp) {
         if (!resp.ok) return resp.text().then(function (t) { throw new Error(t || ("HTTP " + resp.status)); });
         var n = resp.headers.get("X-OXP-Registros") || estado_cdp.filas.length;
