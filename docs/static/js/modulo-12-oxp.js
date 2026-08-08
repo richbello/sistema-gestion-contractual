@@ -1,18 +1,13 @@
 /* ==========================================================================
- * Módulo 12 · CDP-CRP de OXP  (CRP + CDP con conversión de rubros)
+ * Módulo 12 · CDP-CRP de OXP  (CRP + CDP con cruce por Número de CDP)
  * --------------------------------------------------------------------------
- * Pestañas CRP y CDP: lee el reporte CRP en el NAVEGADOR con SheetJS,
- * filtra OXP (Com.Sin.Aut.Giro > 0), mapea a claves canónicas (incluye
- * N° Interno CRP, N° Posición CRP y Rubro para conversión). El backend
- * agrupa por CRP y aplica la conversión de rubros en CDP.
- *
- * Reutiliza helpers globales de main.js:
- *   API_BASE, configurarDropzoneUnico, mostrarAlerta, mostrarEstado, crearMetrica
+ * Pestañas CRP y CDP: lee reportes CRP y CDP en el NAVEGADOR con SheetJS,
+ * filtra OXP (Com.Sin.Aut.Giro > 0), mapea a claves canónicas, y cruza
+ * automáticamente por Número de CDP para extraer No.Interno CDP y No.Posición CDP.
  * ==========================================================================*/
 (function () {
   "use strict";
 
-  // Encabezado del reporte CRP -> clave canónica
   var MAPEO_FUENTE = {
     importe:         ["Com.Sin.Aut.Giro"],
     objeto:          ["Objeto"],
@@ -25,22 +20,20 @@
     id_responsable:  ["ID Responsable"],
     interno_crp:     ["N° Interno CRP"],
     pos_crp:         ["N° Posición CRP"],
-    num_cdp:         ["Número de CDP"],      // -> col A del CDP y Objeto
-    num_crp:         ["Número de CRP"],      // -> Objeto
-    rubro:           ["Rubro"],              // -> Posición Presupuestal (fallback)
-    nuevo_rubro:     ["Nuevo Rubro"],        // -> Posición Presupuestal (si lleno)
-    elemento_pep:    ["Elemento PEP"],       // -> determina Posición Presupuestal
+    num_cdp:         ["Número de CDP"],
+    num_crp:         ["Número de CRP"],
+    rubro:           ["Rubro"],
+    nuevo_rubro:     ["Nuevo Rubro"],
+    elemento_pep:    ["Elemento PEP"],
     fondos:          ["Fondos", "Fondo"]
   };
 
-  // Mapeo para reporte CDP: extrae No. Interno CDP y No. Posición CDP
   var MAPEO_CDP = {
-    valor:           ["Valor"],
+    no_cdp:          ["No. CDP"],
     no_interno_cdp:  ["No.Interno CDP"],
     no_posicion_cdp: ["No.Posición CDP"]
   };
 
-  // Almacenamiento de datos del reporte CDP
   var datosReporteCDP = {};
 
   function norm(t) {
@@ -48,6 +41,7 @@
     return String(t).normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
       .toLowerCase().replace(/[^a-z0-9]/g, "");
   }
+  
   function aNumero(v) {
     if (v === null || v === undefined || v === "") return 0;
     if (typeof v === "number") return v;
@@ -113,12 +107,16 @@
     for (var r = 1; r < aoa.length; r++) {
       var row = aoa[r];
       if (!row || row.every(function (c) { return c === null || c === ""; })) continue;
-      var noCdp = String(row[colDe.no_cdp] || "").trim();
-      if (!noCdp) continue;
-      mapa[noCdp] = {
-        no_interno_cdp: row[colDe.no_interno_cdp] || "",
-        no_posicion_cdp: row[colDe.no_posicion_cdp] || ""
-      };
+      var no_cdp = row[colDe.no_cdp];
+      if (!no_cdp) continue;
+      try {
+        var num = parseInt(parseFloat(String(no_cdp).trim()));
+        var clave = String(num).padStart(10, '0');
+        mapa[clave] = {
+          no_interno_cdp: row[colDe.no_interno_cdp] || "",
+          no_posicion_cdp: row[colDe.no_posicion_cdp] || ""
+        };
+      } catch (e) {}
     }
     return mapa;
   }
@@ -131,7 +129,6 @@
     URL.revokeObjectURL(a.href);
   }
 
-  // ========== PESTAÑAS ==========
   Array.prototype.forEach.call(document.querySelectorAll(".oxp-tab"), function (tab) {
     tab.addEventListener("click", function () {
       if (tab.disabled) return;
@@ -142,13 +139,17 @@
     });
   });
 
-  // ========== CRP OXP ==========
   if (typeof configurarDropzoneUnico === "function")
     configurarDropzoneUnico("drop-oxp", "input-oxp", "lista-oxp");
 
+  if (typeof configurarDropzoneUnico === "function")
+    configurarDropzoneUnico("drop-reporte-cdp", "input-reporte-cdp", "lista-reporte-cdp");
+
   var estado_crp = { filas: [], total: 0, grupos: 0 };
   var input_crp = document.getElementById("input-oxp");
+  var input_cdp = document.getElementById("input-reporte-cdp");
   var resumen_crp = document.getElementById("resumen-oxp");
+  var resumen_cdp = document.getElementById("resumen-reporte-cdp");
   var btn_crp = document.getElementById("btn-oxp-crp");
   var metricas_crp = document.getElementById("metricas-oxp");
 
@@ -159,7 +160,7 @@
       mostrarAlerta("alerta-oxp", "");
       document.getElementById("resultados-oxp").classList.remove("visible");
       btn_crp.disabled = true;
-      resumen_crp.textContent = "Leyendo reporte…";
+      resumen_crp.textContent = "Leyendo reporte CRP…";
       var reader = new FileReader();
       reader.onload = function (ev) {
         try {
@@ -178,7 +179,31 @@
       };
       reader.readAsArrayBuffer(file);
     });
+  }
 
+  if (input_cdp) {
+    input_cdp.addEventListener("change", function (e) {
+      var file = e.target.files[0];
+      if (!file) return;
+      mostrarAlerta("alerta-reporte-cdp", "");
+      resumen_cdp.textContent = "Leyendo reporte CDP…";
+      var reader = new FileReader();
+      reader.onload = function (ev) {
+        try {
+          datosReporteCDP = procesarReporteCDP(ev.target.result);
+          var numRegistros = Object.keys(datosReporteCDP).length;
+          resumen_cdp.innerHTML =
+            "Reporte CDP cargado: <b>" + numRegistros + "</b> registros. Se cruzarán por Número de CDP.";
+        } catch (err) {
+          resumen_cdp.textContent = "";
+          mostrarAlerta("alerta-reporte-cdp", err.message);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  if (btn_crp) {
     btn_crp.addEventListener("click", function () {
       mostrarAlerta("alerta-oxp", "");
       btn_crp.disabled = true;
@@ -207,86 +232,60 @@
     });
   }
 
-  // ========== REPORTE CDP (carga opcional) ==========
   if (typeof configurarDropzoneUnico === "function")
-    configurarDropzoneUnico("drop-reporte-cdp", "input-reporte-cdp", "lista-reporte-cdp");
+    configurarDropzoneUnico("drop-oxp-cdp", "input-oxp-cdp", "lista-oxp-cdp");
 
-  var input_reporte_cdp = document.getElementById("input-reporte-cdp");
-  var resumen_reporte_cdp = document.getElementById("resumen-reporte-cdp");
+  var estado_cdp = { filas: [], total: 0, grupos: 0 };
+  var input_cdp_final = document.getElementById("input-oxp-cdp");
+  var resumen_cdp_final = document.getElementById("resumen-oxp-cdp");
+  var btn_cdp = document.getElementById("btn-oxp-cdp");
+  var metricas_cdp = document.getElementById("metricas-oxp-cdp");
 
-  if (input_reporte_cdp) {
-    input_reporte_cdp.addEventListener("change", function (e) {
+  if (input_cdp_final) {
+    input_cdp_final.addEventListener("change", function (e) {
       var file = e.target.files[0];
       if (!file) return;
-      mostrarAlerta("alerta-reporte-cdp", "");
-      resumen_reporte_cdp.textContent = "Leyendo reporte CDP…";
+      mostrarAlerta("alerta-oxp-cdp", "");
+      document.getElementById("resultados-oxp-cdp").classList.remove("visible");
+      btn_cdp.disabled = true;
+      resumen_cdp_final.textContent = "Leyendo reporte…";
       var reader = new FileReader();
       reader.onload = function (ev) {
         try {
-          datosReporteCDP = procesarReporteCDP(ev.target.result);
-          var numRegistros = Object.keys(datosReporteCDP).length;
-          resumen_reporte_cdp.innerHTML =
-            "Reporte CDP cargado: <b>" + numRegistros + "</b> registros con No. Interno CDP y No. Posición CDP.<br>" +
-            "<em style='color:#1d4c4c;'>Estos datos se incluirán automáticamente en el CDP OXP generado.</em>";
+          estado_cdp = procesarReporte(ev.target.result);
+          resumen_cdp_final.innerHTML =
+            "Filas en reporte: <b>" + estado_cdp.total + "</b> · " +
+            "A constituir (saldo &gt; 0): <b>" + estado_cdp.filas.length + "</b>";
+          var hay = estado_cdp.filas.length > 0;
+          btn_cdp.disabled = !hay;
+          if (!hay) mostrarAlerta("alerta-oxp-cdp", "No hay filas con saldo pendiente.");
         } catch (err) {
-          resumen_reporte_cdp.textContent = "";
-          mostrarAlerta("alerta-reporte-cdp", err.message);
+          resumen_cdp_final.textContent = "";
+          mostrarAlerta("alerta-oxp-cdp", err.message);
         }
       };
       reader.readAsArrayBuffer(file);
     });
   }
 
-  // ========== CDP OXP ==========
-  if (typeof configurarDropzoneUnico === "function")
-    configurarDropzoneUnico("drop-oxp-cdp", "input-oxp-cdp", "lista-oxp-cdp");
-
-  var estado_cdp = { filas: [], total: 0, grupos: 0 };
-  var input_cdp = document.getElementById("input-oxp-cdp");
-  var resumen_cdp = document.getElementById("resumen-oxp-cdp");
-  var btn_cdp = document.getElementById("btn-oxp-cdp");
-  var metricas_cdp = document.getElementById("metricas-oxp-cdp");
-
-  if (input_cdp) {
-    input_cdp.addEventListener("change", function (e) {
-      var file = e.target.files[0];
-      if (!file) return;
-      mostrarAlerta("alerta-oxp-cdp", "");
-      document.getElementById("resultados-oxp-cdp").classList.remove("visible");
-      btn_cdp.disabled = true;
-      resumen_cdp.textContent = "Leyendo reporte…";
-      var reader = new FileReader();
-      reader.onload = function (ev) {
-        try {
-          estado_cdp = procesarReporte(ev.target.result);
-          resumen_cdp.innerHTML =
-            "Filas en reporte: <b>" + estado_cdp.total + "</b> · " +
-            "A constituir (saldo &gt; 0): <b>" + estado_cdp.filas.length + "</b> · " +
-            "CRP únicos: <b>" + estado_cdp.grupos + "</b><br><em style='color:#7c3a3a;'>Los rubros se convertirán según la tabla (ej. O230689 → O230690).</em>";
-          var hay = estado_cdp.filas.length > 0;
-          btn_cdp.disabled = !hay;
-          if (!hay) mostrarAlerta("alerta-oxp-cdp", "No hay filas con saldo pendiente.");
-        } catch (err) {
-          resumen_cdp.textContent = "";
-          mostrarAlerta("alerta-oxp-cdp", err.message);
-        }
-      };
-      reader.readAsArrayBuffer(file);
-    });
-
+  if (btn_cdp) {
     btn_cdp.addEventListener("click", function () {
       mostrarAlerta("alerta-oxp-cdp", "");
       btn_cdp.disabled = true;
       mostrarEstado("estado-oxp-cdp", true);
 
-      // Enriquecer filas con datos del reporte CDP
       var filasEnriquecidas = estado_cdp.filas.map(function (fila) {
         var filaComp = Object.assign({}, fila);
-        if (fila.num_cdp && datosReporteCDP[String(fila.num_cdp).trim()]) {
-          var datos = datosReporteCDP[String(fila.num_cdp).trim()];
-          filaComp.no_interno_cdp = datos.no_interno_cdp;
-          filaComp.no_posicion_cdp = datos.no_posicion_cdp;
-        }
+        var num_cdp_str = String(fila.num_cdp || "").trim();
+        try {
+          var num = parseInt(parseFloat(num_cdp_str));
+          var clave = String(num).padStart(10, '0');
+          if (datosReporteCDP[clave]) {
+            var datos = datosReporteCDP[clave];
+            filaComp.no_interno_cdp = datos.no_interno_cdp;
+            filaComp.no_posicion_cdp = datos.no_posicion_cdp;
+          }
+        } catch (e) {}
         return filaComp;
       });
 
@@ -302,7 +301,7 @@
         descargarBlob(res.blob, "CDP_de_OXP_diligenciado.xlsx");
         metricas_cdp.innerHTML = "";
         metricas_cdp.appendChild(crearMetrica(estado_cdp.total, "Filas en reporte"));
-        metricas_cdp.appendChild(crearMetrica(estado_cdp.grupos, "CRP únicos", "verde"));
+        metricas_cdp.appendChild(crearMetrica(estado_cdp.filas.length, "Filas a constituir", "verde"));
         metricas_cdp.appendChild(crearMetrica(res.n, "Filas escritas", "ocre"));
         document.getElementById("resultados-oxp-cdp").classList.add("visible");
       }).catch(function (err) {
@@ -314,6 +313,5 @@
     });
   }
 
-  // Despierta el backend
   if (API_BASE) fetch(API_BASE + "/api/salud").catch(function () {});
 })();

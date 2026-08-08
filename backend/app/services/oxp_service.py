@@ -431,8 +431,13 @@ def llenar_cdp_oxp(filas, plantilla_path=None):
         ws.cell(row=r, column=17, value=_g(fila, "id_solicitante"))  # Q ID Solicitante
         ws.cell(row=r, column=18, value=_g(fila, "id_responsable"))  # R ID Responsable
         ws.cell(row=r, column=19, value=num_ext)                  # S Num. Ext. Entidad
-        ws.cell(row=r, column=20, value=_g(fila, "no_interno_cdp"))  # T No. Interno CDP (del reporte CDP)
-        ws.cell(row=r, column=21, value=_g(fila, "no_posicion_cdp"))  # U No. Posición CDP (del reporte CDP)
+        # Columnas T y U: datos del reporte CDP (No.Interno CDP, No.Posición CDP)
+        no_interno = _g(fila, "no_interno_cdp")
+        no_posicion = _g(fila, "no_posicion_cdp")
+        if no_interno:
+            ws.cell(row=r, column=20, value=no_interno)           # T No. Interno CDP
+        if no_posicion:
+            ws.cell(row=r, column=21, value=no_posicion)          # U No. Posición CDP
 
         r += 1
         num_ext += 1
