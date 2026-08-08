@@ -11,7 +11,7 @@
   const WORKER_URL = "https://controlia-licencias.richbello.workers.dev";
 
   const C = {
-    navy: "#1a2742", navy2: "#1e3a6e", card: "#ffffff", bg: "#f0f2f5",
+    navy: "#A50D24", navy2: "#E30613", card: "#ffffff", bg: "#f0f2f5",
     cyan: "#5dade2", verde: "#27ae60", amar: "#f39c12", rojo: "#e74c3c",
     violet: "#8e44ad", muted: "#7f8c8d", border: "#e8edf2", texto: "#2c3e50",
   };
