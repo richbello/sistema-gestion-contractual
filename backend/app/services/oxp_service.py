@@ -303,9 +303,9 @@ def llenar_crp_vf(filas, plantilla_path=None):
             ws.cell(row=r, column=6,  value=CLASE_DOC_CRP)            # F Clase Documento
             ws.cell(row=r, column=7,  value=MONEDA)                    # G Moneda
             ws.cell(row=r, column=8,  value=_num(_g(fila, "importe")))  # H importe
-            ws.cell(row=r, column=9, value=_g(fila, "no_interno_cdp"))  # I CDP (No.Interno del reporte CDP)
-            no_pos = _g(fila, "no_posicion_cdp")
-            ws.cell(row=r, column=10, value=no_pos if no_pos else POSICION_CDP)  # J Posicion CDP
+            ws.cell(row=r, column=9,  value=_g(fila, "no_interno_cdp"))  # I CDP (N° Interno CDP del reporte)
+            _np = _g(fila, "no_posicion_cdp")
+            ws.cell(row=r, column=10, value=_np if _np not in (None, "") else POSICION_CDP)  # J Posicion CDP
             ws.cell(row=r, column=11, value=_g(fila, "objeto"))         # K Objeto
             ws.cell(row=r, column=12, value=_g(fila, "tipo_compromiso"))# L Tipo compromiso
             ws.cell(row=r, column=13, value=_g(fila, "no_compromiso"))  # M No. Compromiso
