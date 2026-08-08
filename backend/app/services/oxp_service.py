@@ -351,9 +351,6 @@ def llenar_crp_vf(filas, plantilla_path=None):
 FONDOS_FIJO       = "1-200-I071"
 CUENTA_MAYOR_FIJA = 7990990000            # numérico (confirmado en referencia)
 NUMERO_OFICIO     = "constitución OxP"
-PERIODO_CDP       = 2026                   # numérico
-FECHA_DOCUMENTO_CDP = "05.01.2026"        # fija (confirmada en referencia)
-FECHA_CONTAB_CDP    = "05.01.2026"        # fija
 
 
 def _calcular_posicion_presupuestal(nuevo_rubro, rubro, elemento_pep):
@@ -392,6 +389,8 @@ def llenar_cdp_oxp(filas, plantilla_path=None):
 
     r = 2               # fila de datos (encabezado en fila 1)
     num_ext = 1         # Num. Ext. Entidad: consecutivo global desde 1
+    hoy = _hoy()                    # fecha REAL del día en que se genera el CDP
+    periodo = date.today().year     # período = año en curso al generar
     for fila in filas:
         num_cdp = _g(fila, "num_cdp")
         num_crp = _g(fila, "num_crp")
@@ -408,8 +407,8 @@ def llenar_cdp_oxp(filas, plantilla_path=None):
 
         ws.cell(row=r, column=1,  value=_num(num_cdp))              # A CDP (Número de CDP del reporte)
         ws.cell(row=r, column=2,  value=1)                         # B Posición (siempre 1)
-        ws.cell(row=r, column=3,  value=FECHA_DOCUMENTO_CDP)       # C Fecha Documento (fija)
-        ws.cell(row=r, column=4,  value=FECHA_CONTAB_CDP)          # D Fecha Contabilización (fija)
+        ws.cell(row=r, column=3,  value=hoy)                       # C Fecha Documento (hoy)
+        ws.cell(row=r, column=4,  value=hoy)                       # D Fecha Contabilización (hoy)
         ws.cell(row=r, column=5,  value="CP")                      # E Clase Documento
         ws.cell(row=r, column=6,  value=SOCIEDAD_FIJA)             # F Sociedad
         ws.cell(row=r, column=7,  value=MONEDA)                    # G Moneda
@@ -418,17 +417,24 @@ def llenar_cdp_oxp(filas, plantilla_path=None):
         ws.cell(row=r, column=10, value=FONDOS_FIJO)              # J Fondos
         if elemento_pep:
             ws.cell(row=r, column=11, value=elemento_pep)         # K Elemento PEP
-        ws.cell(row=r, column=12, value=PERIODO_CDP)              # L Período Presupuestal
+        ws.cell(row=r, column=12, value=periodo)                  # L Período Presupuestal (año actual)
         ws.cell(row=r, column=13, value=CUENTA_MAYOR_FIJA)        # M Cuenta de Mayor
         ws.cell(row=r, column=14, value=objeto_txt)               # N Objeto
         ws.cell(row=r, column=15, value=NUMERO_OFICIO)            # O Número Oficio
-        ws.cell(row=r, column=16, value=FECHA_DOCUMENTO_CDP)      # P Fecha Oficio (fija, = documento)
+        ws.cell(row=r, column=16, value=hoy)                      # P Fecha Oficio (hoy)
         ws.cell(row=r, column=17, value=_g(fila, "id_solicitante"))  # Q ID Solicitante
         ws.cell(row=r, column=18, value=_g(fila, "id_responsable"))  # R ID Responsable
         ws.cell(row=r, column=19, value=num_ext)                  # S Num. Ext. Entidad
 
         r += 1
         num_ext += 1
+
+    # Dejar solo la hoja CDP en el archivo entregado (sin Instrucciones/AjusteValor/CRP/CRP_vf)
+    for nombre_hoja in list(wb.sheetnames):
+        if nombre_hoja != "CDP":
+            del wb[nombre_hoja]
+    ws.sheet_state = "visible"
+    wb.active = 0
 
     buf = BytesIO()
     wb.save(buf)
