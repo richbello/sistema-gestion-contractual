@@ -35,8 +35,8 @@
 
   // Mapeo para reporte CDP: extrae No. Interno CDP y No. Posición CDP
   var MAPEO_CDP = {
-    no_cdp:         ["No. CDP"],
-    no_interno_cdp: ["No.Interno CDP"],
+    valor:           ["Valor"],
+    no_interno_cdp:  ["No.Interno CDP"],
     no_posicion_cdp: ["No.Posición CDP"]
   };
 
