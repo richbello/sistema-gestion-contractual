@@ -9,7 +9,9 @@ paginas_bp = Blueprint("paginas", __name__)
 
 
 def _frontend_dir():
-    return os.path.join(os.path.dirname(__file__), "..", "..", "..", "frontend")
+    return os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "frontend")
+    )
 
 
 @paginas_bp.route("/")
@@ -20,3 +22,8 @@ def inicio():
 @paginas_bp.route("/config.js")
 def config_js():
     return send_from_directory(_frontend_dir(), "config.js")
+
+
+@paginas_bp.route("/<path:nombre_archivo>")
+def servir_pagina(nombre_archivo):
+    return send_from_directory(_frontend_dir(), nombre_archivo)
