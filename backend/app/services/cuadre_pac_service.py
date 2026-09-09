@@ -1,31 +1,26 @@
 """
 Módulo 3 — Cuadre PAC Acumulado.
-
-Versión mejorada que agrupa los pagos por Rubro+Fondo (unificados),
-y cruce contra PAC de múltiples meses para indicar en qué mes se cubre
-completamente si falta en septiembre.
+Agrupa pagos por Rubro+Fondo, cruza contra PAC de varios meses e indica
+en qué mes se cubre si falta en el mes evaluado.
 """
 import pandas as pd
 import numpy as np
+import unicodedata
 
 COLS_PLANTILLA_REQUERIDAS = {'Tipo Registro P', 'Clave Contab.', 'importe', 'Rubro', 'Fondos'}
 COLS_PAC_REQUERIDAS = {'Descripción período presupuesto', 'Progr.financiación', 'Fondos', 'Disponibilidad PAC'}
 
 
 def _importe_por_bloque(plantilla):
-    """Extrae Rubro/Fondos/importe por bloque (cabecera C -> P31)."""
     tipo  = plantilla['Tipo Registro P'].astype(str).str.upper().str.strip()
     clave = pd.to_numeric(plantilla['Clave Contab.'], errors='coerce')
     imp   = pd.to_numeric(plantilla['importe'], errors='coerce')
-
     filas = []
     rubro = fondo = valor = None
     abierto = False
-
     def cerrar():
         if abierto and str(rubro) not in ('None', 'nan') and valor is not None:
             filas.append((rubro, fondo, valor))
-
     for i in range(len(plantilla)):
         if tipo.iat[i] == 'C':
             cerrar()
@@ -47,8 +42,6 @@ def _importe_por_bloque(plantilla):
 
 
 def _normalizar_periodo(periodo):
-    """Normaliza nombre del período a mayúsculas sin acentos."""
-    import unicodedata
     if periodo is None:
         return ''
     s = str(periodo).strip().upper()
@@ -56,21 +49,16 @@ def _normalizar_periodo(periodo):
 
 
 def _parse_mes_numero(periodo_str):
-    """Convierte 'ENERO' -> 1, 'FEBRERO' -> 2, etc."""
-    meses = {
-        'ENERO': 1, 'FEBRERO': 2, 'MARZO': 3, 'ABRIL': 4, 'MAYO': 5, 'JUNIO': 6,
-        'JULIO': 7, 'AGOSTO': 8, 'SEPTIEMBRE': 9, 'OCTUBRE': 10, 'NOVIEMBRE': 11, 'DICIEMBRE': 12
-    }
-    norm = _normalizar_periodo(periodo_str)
-    return meses.get(norm, None)
+    meses = {'ENERO':1,'FEBRERO':2,'MARZO':3,'ABRIL':4,'MAYO':5,'JUNIO':6,
+             'JULIO':7,'AGOSTO':8,'SEPTIEMBRE':9,'OCTUBRE':10,'NOVIEMBRE':11,'DICIEMBRE':12}
+    return meses.get(_normalizar_periodo(periodo_str), None)
 
 
 def _convertir_tipos(obj):
-    """Convierte tipos numpy/pandas a tipos nativos de Python para JSON."""
     if isinstance(obj, dict):
         return {k: _convertir_tipos(v) for k, v in obj.items()}
     elif isinstance(obj, (list, tuple)):
-        return [_convertir_tipos(item) for item in obj]
+        return [_convertir_tipos(x) for x in obj]
     elif isinstance(obj, (np.integer, np.floating)):
         return obj.item()
     elif isinstance(obj, pd.Series):
@@ -80,7 +68,6 @@ def _convertir_tipos(obj):
 
 
 def cuadrar_pac(ruta_plantilla, ruta_pac, mes_pac, ruta_salida_excel):
-    """Cuadre PAC acumulado: agrupa, cruza contra PAC, e indica cobertura por mes."""
     plantilla = pd.read_excel(ruta_plantilla, sheet_name='Hoja1')
     pac = pd.read_excel(ruta_pac, sheet_name='Data')
 
@@ -100,8 +87,7 @@ def cuadrar_pac(ruta_plantilla, ruta_pac, mes_pac, ruta_salida_excel):
     consolidado = (
         bloques.dropna(subset=['Rubro', 'Fondos'])
         .groupby(['Rubro', 'Fondos'], as_index=False)['importe']
-        .sum()
-        .rename(columns={'importe': 'Importe_Total'})
+        .sum().rename(columns={'importe': 'Importe_Total'})
     )
 
     periodos = list(pac['Descripción período presupuesto'].dropna().unique())
@@ -109,76 +95,67 @@ def cuadrar_pac(ruta_plantilla, ruta_pac, mes_pac, ruta_salida_excel):
     if mes_num_actual is None:
         raise ValueError(f"Mes '{mes_pac}' no reconocido.")
 
-    pac_norm = pac.copy()
-    pac_norm['_periodo_norm'] = pac_norm['Descripción período presupuesto'].map(_normalizar_periodo)
-    pac_norm['_mes_num'] = pac_norm['_periodo_norm'].map(_parse_mes_numero)
+    pac['_periodo_norm'] = pac['Descripción período presupuesto'].apply(_normalizar_periodo)
+    pac['Progr.financiación'] = pac['Progr.financiación'].astype(str).str.strip()
+    pac['Fondos'] = pac['Fondos'].astype(str).str.strip()
 
     resultado_filas = []
     for _, row in consolidado.iterrows():
-        rub = row['Rubro']
-        fon = row['Fondos']
+        rub = str(row['Rubro']).strip()
+        fon = str(row['Fondos']).strip()
         imp = float(row['Importe_Total'])
 
-        pac_rub_fon = pac_norm[
-            (pac_norm['Progr.financiación'].astype(str).str.strip() == str(rub).strip()) &
-            (pac_norm['Fondos'].astype(str).str.strip() == str(fon).strip())
-        ]
-
-        pac_mes_actual = float(pac_rub_fon[pac_rub_fon['_periodo_norm'] == _normalizar_periodo(mes_pac)]['Disponibilidad PAC'].sum())
+        pac_rf = pac[(pac['Progr.financiación'] == rub) & (pac['Fondos'] == fon)]
+        pac_mes = float(pac_rf[pac_rf['_periodo_norm'] == _normalizar_periodo(mes_pac)]['Disponibilidad PAC'].sum())
 
         pac_acumulado = {}
         for periodo in periodos:
             mes_n = _parse_mes_numero(periodo)
             if mes_n is not None and mes_n >= mes_num_actual:
-                pac_acumulado[periodo] = float(pac_rub_fon[pac_rub_fon['_periodo_norm'] == _normalizar_periodo(periodo)]['Disponibilidad PAC'].sum())
+                pac_acumulado[periodo] = float(pac_rf[pac_rf['_periodo_norm'] == _normalizar_periodo(periodo)]['Disponibilidad PAC'].sum())
 
-        cobertura_texto = "SIN DISPONIBILIDAD PAC"
-        if pac_mes_actual > 0:
-            if pac_mes_actual >= imp:
-                cobertura_texto = f"OK - CUBRE EN {mes_pac.upper()}"
+        cobertura = "SIN DISPONIBILIDAD PAC"
+        if pac_mes > 0:
+            if pac_mes >= imp:
+                cobertura = f"OK - CUBRE EN {mes_pac.upper()}"
             else:
-                acum = 0
-                meses_cubrimiento = []
-                meses_ord = sorted(pac_acumulado.items(), key=lambda x: _parse_mes_numero(x[0]) or 999)
-                for periodo, monto in meses_ord:
-                    acum += monto
-                    meses_cubrimiento.append(periodo.upper())
+                acum = 0; meses_cub = []
+                for periodo, monto in sorted(pac_acumulado.items(), key=lambda x: _parse_mes_numero(x[0]) or 999):
+                    acum += monto; meses_cub.append(periodo.upper())
                     if acum >= imp:
                         break
-
+                falta = imp - pac_mes
                 if acum >= imp:
-                    meses_str = " + ".join(meses_cubrimiento)
-                    falta = imp - pac_mes_actual
-                    cobertura_texto = f"FALTA ${falta:,.0f} EN {mes_pac.upper()}, CUBRE acum. {meses_str}"
+                    cobertura = f"FALTA ${falta:,.0f} EN {mes_pac.upper()}, CUBRE acum. {' + '.join(meses_cub)}"
                 else:
-                    falta = imp - pac_mes_actual
-                    cobertura_texto = f"FALTA ${falta:,.0f}, NO CUBRE NI EN {meses_cubrimiento[-1] if meses_cubrimiento else 'AÑO'}"
+                    cobertura = f"FALTA ${falta:,.0f}, NO CUBRE"
 
         resultado_filas.append({
-            'Rubro': str(rub),
-            'Fondos': str(fon),
+            'Rubro': rub,
+            'Fondos': fon,
             'Importe_Total': int(imp),
-            'PAC_Septiembre': int(pac_mes_actual),
-            'Diferencia': int(pac_mes_actual - imp),
-            'Cobertura': cobertura_texto
+            'Disponibilidad_PAC': int(pac_mes),
+            'Diferencia': int(pac_mes - imp),
+            'Cobertura': cobertura
         })
 
     resultado = pd.DataFrame(resultado_filas)
     resultado.to_excel(ruta_salida_excel, index=False)
 
     tabla_json = _convertir_tipos(resultado.to_dict(orient="records"))
-    cubre = int((resultado['Diferencia'] >= 0).sum())
-    no_cubre = int((resultado['Diferencia'] < 0).sum())
-    sin_disp = int((resultado['PAC_Septiembre'] == 0).sum())
+    cubre = int(resultado['Cobertura'].str.startswith('OK').sum())
+    no_cubre = int(resultado['Cobertura'].str.startswith('FALTA').sum())
+    sin_disp = int((resultado['Cobertura'] == 'SIN DISPONIBILIDAD PAC').sum())
 
     return {
         "ok": True,
         "mes": mes_pac,
         "periodos_disponibles": periodos,
         "combinaciones": int(len(resultado)),
-        "cubre_septiembre": cubre,
-        "no_cubre_septiembre": no_cubre,
+        "cubre": cubre,
+        "no_cubre": no_cubre,
         "sin_disponibilidad": sin_disp,
+        "sin_match_en_pac": sin_disp,
         "tabla": tabla_json,
         "archivo_salida": ruta_salida_excel,
     }
