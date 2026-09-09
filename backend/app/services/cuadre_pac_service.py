@@ -4,11 +4,60 @@ Módulo 3 — Cuadre PAC.
 Adaptado del script original de Colab: cruza la plantilla de pagos
 (Módulo 2) contra el reporte PAC del mes, agrupando por Rubro + Fondos,
 para verificar si el PAC disponible cubre el valor a pagar.
+
+CAMBIO vs. versión anterior:
+  El importe a pagar YA NO se suma de la fila P40. BogData a veces exporta
+  la P40 con el número de documento (RP Doc Presupuestal) en la columna
+  'importe' (valores ~5.000.000.000), lo que inflaba el cuadre. El valor
+  real de pago está en la fila P31 de cada bloque; de ahí se toma ahora.
+  El Rubro y los Fondos se siguen leyendo de la P40.
 """
 import pandas as pd
 
-COLS_PLANTILLA_REQUERIDAS = {'Clave Contab.', 'importe', 'Rubro', 'Fondos'}
+COLS_PLANTILLA_REQUERIDAS = {'Tipo Registro P', 'Clave Contab.', 'importe', 'Rubro', 'Fondos'}
 COLS_PAC_REQUERIDAS = {'Descripción período presupuesto', 'Progr.financiación', 'Fondos', 'Disponibilidad PAC'}
+
+
+def _importe_por_bloque(plantilla):
+    """
+    Recorre la plantilla por bloques (cabecera 'C' -> P40 -> P31) y devuelve
+    un DataFrame Rubro/Fondos/importe con el importe REAL de cada contrato:
+      - Rubro y Fondos: de la fila P40 del bloque.
+      - importe: de la fila P31 (manda porque siempre viene limpio). Si no
+        hay P31, cae a la P40 solo si su importe no es el # de documento.
+    """
+    tipo  = plantilla['Tipo Registro P'].astype(str).str.upper().str.strip()
+    clave = pd.to_numeric(plantilla['Clave Contab.'], errors='coerce')
+    imp   = pd.to_numeric(plantilla['importe'], errors='coerce')
+    if 'RP Doc Presupuestal' in plantilla.columns:
+        doc = pd.to_numeric(plantilla['RP Doc Presupuestal'], errors='coerce')
+    else:
+        doc = pd.Series([pd.NA] * len(plantilla))
+
+    filas = []
+    rubro = fondo = valor = None
+    abierto = False
+
+    def cerrar():
+        if abierto and str(rubro) not in ('None', 'nan') and valor is not None:
+            filas.append((rubro, fondo, valor))
+
+    for i in range(len(plantilla)):
+        if tipo.iat[i] == 'C':
+            cerrar()
+            rubro = fondo = valor = None
+            abierto = True
+        elif clave.iat[i] == 40:
+            rubro = str(plantilla['Rubro'].iat[i]).strip()
+            fondo = str(plantilla['Fondos'].iat[i]).strip()
+            # fallback: usar P40 solo si su importe NO es el # de documento
+            if valor is None and pd.notna(imp.iat[i]) and imp.iat[i] != doc.iat[i]:
+                valor = imp.iat[i]
+        elif clave.iat[i] == 31 and pd.notna(imp.iat[i]):
+            valor = imp.iat[i]          # la P31 manda: importe real de pago
+    cerrar()
+
+    return pd.DataFrame(filas, columns=['Rubro', 'Fondos', 'importe'])
 
 
 def cuadrar_pac(ruta_plantilla, ruta_pac, mes_pac, ruta_salida_excel):
@@ -26,15 +75,16 @@ def cuadrar_pac(ruta_plantilla, ruta_pac, mes_pac, ruta_salida_excel):
     if faltantes_pac:
         raise KeyError(f"Faltan columnas en el PAC: {faltantes_pac}")
 
-    plantilla['importe'] = pd.to_numeric(plantilla['importe'], errors='coerce').fillna(0)
     pac['Disponibilidad PAC'] = pd.to_numeric(pac['Disponibilidad PAC'], errors='coerce').fillna(0)
 
-    p40 = plantilla[plantilla['Clave Contab.'] == 40].copy()
-    if p40.empty:
-        raise ValueError("No se encontraron filas con Clave Contab. = 40 en la plantilla.")
+    # --- Importe real por Rubro + Fondos (tomado de la P31, no de la P40) ---
+    bloques = _importe_por_bloque(plantilla)
+    if bloques.empty:
+        raise ValueError("No se pudo determinar el importe de ningún contrato "
+                         "(¿faltan filas P31 o P40 con Rubro?).")
 
     consolidado = (
-        p40.dropna(subset=['Rubro', 'Fondos'])
+        bloques.dropna(subset=['Rubro', 'Fondos'])
         .groupby(['Rubro', 'Fondos'], as_index=False)['importe']
         .sum()
         .rename(columns={'importe': 'Importe_Total'})
@@ -72,7 +122,7 @@ def cuadrar_pac(ruta_plantilla, ruta_pac, mes_pac, ruta_salida_excel):
     resultado['Cobertura'] = resultado.apply(evaluar_cobertura, axis=1)
 
     for col in ['Importe_Total', 'Disponibilidad_PAC', 'Diferencia']:
-        resultado[col] = resultado[col].astype(int)
+        resultado[col] = resultado[col].round(0).astype(int)
 
     resultado.to_excel(ruta_salida_excel, index=False)
 
