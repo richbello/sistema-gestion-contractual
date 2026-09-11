@@ -2,6 +2,17 @@
 Módulo 3 — Cuadre PAC Acumulado.
 Agrupa pagos por Rubro+Fondo, cruza contra PAC de varios meses e indica
 en qué mes se cubre si falta en el mes evaluado.
+
+CORRECCIONES (sep 2026):
+ 1. La llave de cruce del rubro se normaliza (_norm_rubro): ignora ceros a la
+    izquierda y lecturas tipo float ("230689.0"), para que "0230689" de la
+    plantilla cruce con "230689" de BOGDATA/PAC y viceversa.
+ 2. Se elimina el candado `if pac_mes > 0`: ahora, si el mes evaluado está en 0
+    pero hay PAC en meses siguientes, se reporta la cobertura acumulada en lugar
+    de marcar "SIN DISPONIBILIDAD PAC".
+ 3. Se distingue "SIN MATCH EN PAC" (no hubo cruce) de "SIN DISPONIBILIDAD PAC"
+    (cruzó pero el PAC programado en meses es 0), y la disponibilidad se suma
+    solo de filas con período de mes válido (evita doble conteo con filas Total).
 """
 import pandas as pd
 import numpy as np
@@ -9,6 +20,20 @@ import unicodedata
 
 COLS_PLANTILLA_REQUERIDAS = {'Tipo Registro P', 'Clave Contab.', 'importe', 'Rubro', 'Fondos'}
 COLS_PAC_REQUERIDAS = {'Descripción período presupuesto', 'Progr.financiación', 'Fondos', 'Disponibilidad PAC'}
+
+
+def _norm_rubro(x):
+    """Clave de cruce robusta para el rubro.
+    Ignora ceros a la izquierda y lecturas tipo float ('230689.0'),
+    de modo que '0230689' (plantilla) cruce con '230689' (PAC/BOGDATA).
+    Los códigos de 24 dígitos quedan iguales en ambos lados (pierden el mismo
+    cero inicial), así que no se rompe ningún cruce que hoy funciona.
+    """
+    s = str(x).strip()
+    if s.endswith('.0'):
+        s = s[:-2]
+    s = ''.join(ch for ch in s if ch.isdigit())
+    return s.lstrip('0')
 
 
 def _importe_por_bloque(plantilla):
@@ -95,9 +120,14 @@ def cuadrar_pac(ruta_plantilla, ruta_pac, mes_pac, ruta_salida_excel):
     if mes_num_actual is None:
         raise ValueError(f"Mes '{mes_pac}' no reconocido.")
 
+    # --- Llaves normalizadas para el cruce (defecto 1) ---
     pac['_periodo_norm'] = pac['Descripción período presupuesto'].apply(_normalizar_periodo)
-    pac['Progr.financiación'] = pac['Progr.financiación'].astype(str).str.strip()
-    pac['Fondos'] = pac['Fondos'].astype(str).str.strip()
+    pac['_rubro_norm']   = pac['Progr.financiación'].apply(_norm_rubro)
+    pac['_fondo_norm']   = pac['Fondos'].astype(str).str.strip().str.upper()
+    # marca de fila con período de MES válido (excluye filas Total / vacías)
+    pac['_es_mes'] = pac['_periodo_norm'].apply(lambda p: _parse_mes_numero(p) is not None)
+
+    mes_norm = _normalizar_periodo(mes_pac)
 
     resultado_filas = []
     for _, row in consolidado.iterrows():
@@ -105,30 +135,52 @@ def cuadrar_pac(ruta_plantilla, ruta_pac, mes_pac, ruta_salida_excel):
         fon = str(row['Fondos']).strip()
         imp = float(row['Importe_Total'])
 
-        pac_rf = pac[(pac['Progr.financiación'] == rub) & (pac['Fondos'] == fon)]
-        pac_mes = float(pac_rf[pac_rf['_periodo_norm'] == _normalizar_periodo(mes_pac)]['Disponibilidad PAC'].sum())
+        rub_norm = _norm_rubro(rub)
+        fon_norm = fon.upper()
+        pac_rf = pac[(pac['_rubro_norm'] == rub_norm) & (pac['_fondo_norm'] == fon_norm)]
+        pac_rf_meses = pac_rf[pac_rf['_es_mes']]
 
+        pac_mes = float(pac_rf_meses[pac_rf_meses['_periodo_norm'] == mes_norm]['Disponibilidad PAC'].sum())
+
+        # disponibilidad por período, solo del mes actual en adelante
         pac_acumulado = {}
         for periodo in periodos:
             mes_n = _parse_mes_numero(periodo)
             if mes_n is not None and mes_n >= mes_num_actual:
-                pac_acumulado[periodo] = float(pac_rf[pac_rf['_periodo_norm'] == _normalizar_periodo(periodo)]['Disponibilidad PAC'].sum())
+                pac_acumulado[periodo] = float(
+                    pac_rf_meses[pac_rf_meses['_periodo_norm'] == _normalizar_periodo(periodo)]['Disponibilidad PAC'].sum()
+                )
 
-        cobertura = "SIN DISPONIBILIDAD PAC"
-        if pac_mes > 0:
-            if pac_mes >= imp:
-                cobertura = f"OK - CUBRE EN {mes_pac.upper()}"
-            else:
-                acum = 0; meses_cub = []
-                for periodo, monto in sorted(pac_acumulado.items(), key=lambda x: _parse_mes_numero(x[0]) or 999):
-                    acum += monto; meses_cub.append(periodo.upper())
-                    if acum >= imp:
-                        break
-                falta = imp - pac_mes
+        # disponibilidad total del rubro (solo filas de mes → sin doble conteo)
+        disp_meses = float(pac_rf_meses['Disponibilidad PAC'].sum())
+
+        # --- Lógica de cobertura (defecto 2 y 3) ---
+        if pac_rf.empty:
+            cobertura = "SIN MATCH EN PAC"
+        elif disp_meses <= 0:
+            cobertura = "SIN DISPONIBILIDAD PAC"
+        elif pac_mes >= imp:
+            cobertura = f"OK - CUBRE EN {mes_pac.upper()}"
+        else:
+            acum = 0.0
+            meses_cub = []
+            for periodo, monto in sorted(pac_acumulado.items(),
+                                         key=lambda x: _parse_mes_numero(x[0]) or 999):
+                if monto <= 0:
+                    continue
+                acum += monto
+                meses_cub.append(periodo.upper())
                 if acum >= imp:
-                    cobertura = f"FALTA ${falta:,.0f} EN {mes_pac.upper()}, CUBRE acum. {' + '.join(meses_cub)}"
+                    break
+            if acum >= imp:
+                if pac_mes > 0:
+                    falta = imp - pac_mes
+                    cobertura = (f"FALTA ${falta:,.0f} EN {mes_pac.upper()}, "
+                                 f"CUBRE acum. {' + '.join(meses_cub)}")
                 else:
-                    cobertura = f"FALTA ${falta:,.0f}, NO CUBRE"
+                    cobertura = f"OK - CUBRE acum. {' + '.join(meses_cub)}"
+            else:
+                cobertura = f"FALTA ${imp - acum:,.0f}, NO CUBRE"
 
         resultado_filas.append({
             'Rubro': rub,
@@ -143,9 +195,10 @@ def cuadrar_pac(ruta_plantilla, ruta_pac, mes_pac, ruta_salida_excel):
     resultado.to_excel(ruta_salida_excel, index=False)
 
     tabla_json = _convertir_tipos(resultado.to_dict(orient="records"))
-    cubre = int(resultado['Cobertura'].str.startswith('OK').sum())
-    no_cubre = int(resultado['Cobertura'].str.startswith('FALTA').sum())
-    sin_disp = int((resultado['Cobertura'] == 'SIN DISPONIBILIDAD PAC').sum())
+    sin_match = int((resultado['Cobertura'] == 'SIN MATCH EN PAC').sum())
+    sin_disp  = int((resultado['Cobertura'] == 'SIN DISPONIBILIDAD PAC').sum())
+    no_cubre  = int(resultado['Cobertura'].str.contains('NO CUBRE').sum())
+    cubre     = int(len(resultado) - sin_match - sin_disp - no_cubre)
 
     return {
         "ok": True,
@@ -155,7 +208,7 @@ def cuadrar_pac(ruta_plantilla, ruta_pac, mes_pac, ruta_salida_excel):
         "cubre": cubre,
         "no_cubre": no_cubre,
         "sin_disponibilidad": sin_disp,
-        "sin_match_en_pac": sin_disp,
+        "sin_match_en_pac": sin_match,
         "tabla": tabla_json,
         "archivo_salida": ruta_salida_excel,
     }
