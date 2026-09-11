@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-============================================================================
 MOTOR DE CRUCE CON LÓGICA TEMPORAL — Vigilancia Fiscal IA
 ============================================================================
 Cruza SECOP II × SIRI (Procuraduría) × Boletín (Contraloría) aplicando
