@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vigilancia Fiscal IA</title>
+    <script src="https://cdn.jsdelivr.net/npm/recharts@2.10.0/dist/Recharts.js"></script>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family:'Segoe UI', sans-serif; color:#0f172a; background:#f8fafc; padding:20px; }
@@ -11,25 +12,39 @@
         .header { display:flex; gap:14px; align-items:center; margin-bottom:20px; }
         .header h1 { font-size:26px; font-weight:800; }
         .header p { color:#64748b; font-size:13px; }
-        .control-panel { background:white; border:1px solid #e2e8f0; border-radius:14px; padding:18px; margin-bottom:18px; box-shadow:0 1px 3px rgba(0,0,0,.06); }
-        .control-panel label { display:block; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; margin-bottom:6px; }
-        .control-panel select, .control-panel input, .control-panel button { padding:11px 14px; border:1.5px solid #cbd5e1; border-radius:9px; font-size:14px; }
-        .control-panel button { background:linear-gradient(135deg,#2563eb,#1d4ed8); color:white; border:none; cursor:pointer; font-weight:700; }
-        .control-panel button:hover { opacity:0.9; }
-        .status { margin-top:14px; padding:14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; color:#475569; font-size:13px; }
-        .results { background:white; border:1px solid #e2e8f0; border-radius:14px; padding:18px; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+        .chips { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px; }
+        .chip { background:white; border:1px solid #e2e8f0; border-left:3px solid #2563eb; border-radius:10px; padding:10px 14px; flex:1; min-width:200px; }
+        .chip-title { font-size:12px; font-weight:800; color:#2563eb; }
+        .chip-detail { font-size:11px; color:#64748b; margin-top:2px; }
+        .panel { background:white; border:1px solid #e2e8f0; border-radius:14px; padding:18px; margin-bottom:18px; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+        .panel label { display:block; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; margin-bottom:6px; }
+        .panel select, .panel input, .panel button { padding:11px 14px; border:1.5px solid #cbd5e1; border-radius:9px; font-size:14px; }
+        .panel button { background:linear-gradient(135deg,#2563eb,#1d4ed8); color:white; border:none; cursor:pointer; font-weight:700; }
+        .panel button:hover { opacity:0.9; }
         .stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:14px; margin-bottom:18px; }
         .stat-card { background:white; border:1px solid #e2e8f0; border-left:4px solid #2563eb; border-radius:12px; padding:16px; }
         .stat-number { font-size:32px; font-weight:800; color:#2563eb; }
         .stat-label { font-size:12px; font-weight:700; color:#334155; margin-top:4px; }
+        .stat-sub { font-size:11px; color:#94a3b8; margin-top:3px; }
         table { width:100%; border-collapse:collapse; font-size:13px; }
         table thead { border-bottom:2px solid #e2e8f0; }
         table th { padding:10px 8px; text-align:left; color:#64748b; font-weight:700; }
         table td { padding:11px 8px; border-bottom:1px solid #f1f5f9; }
-        .badge { padding:3px 10px; border-radius:12px; font-size:11px; font-weight:800; }
-        .badge-critica { background:#dc2626; color:white; }
-        .badge-alta { background:#ea580c; color:white; }
-        .badge-media { background:#ca8a04; color:white; }
+        .badge { padding:3px 10px; border-radius:12px; font-size:11px; font-weight:800; color:white; }
+        .badge-critica { background:#dc2626; }
+        .badge-alta { background:#ea580c; }
+        .badge-media { background:#ca8a04; }
+        .badge-info { background:#64748b; }
+        input[type="text"] { width:100%; }
+        .search-panel { display:flex; gap:12px; flex-wrap:wrap; }
+        .search-panel input { flex:1; min-width:220px; }
+        .search-panel button { padding:11px 22px; }
+        .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+        .filter-btn { padding:7px 16px; border-radius:20px; font-size:12px; font-weight:700; cursor:pointer; border:none; background:#f1f5f9; color:#475569; }
+        .filter-btn.active { background:#2563eb; color:white; }
+        .loading { text-align:center; padding:40px; }
+        .spinner { border:4px solid #e2e8f0; border-top:4px solid #2563eb; border-radius:50%; width:40px; height:40px; animation:spin 1s linear infinite; margin:0 auto 10px; }
+        @keyframes spin { 0% { transform:rotate(0deg); } 100% { transform:rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -42,9 +57,24 @@
             </div>
         </div>
 
-        <div class="control-panel">
+        <div class="chips">
+            <div class="chip">
+                <div class="chip-title">SECOP II</div>
+                <div class="chip-detail">Contratación pública · tiempo real</div>
+            </div>
+            <div class="chip" style="border-left-color:#7c3aed;">
+                <div class="chip-title" style="color:#7c3aed;">SIRI · Procuraduría</div>
+                <div class="chip-detail">Antecedentes disciplinarios · periódico</div>
+            </div>
+            <div class="chip" style="border-left-color:#ca8a04;">
+                <div class="chip-title" style="color:#ca8a04;">Boletín · Contraloría</div>
+                <div class="chip-detail">Responsables fiscales · trimestral</div>
+            </div>
+        </div>
+
+        <div class="panel">
             <label>Entidad a auditar</label>
-            <div style="display:flex; gap:12px; margin-bottom:14px;">
+            <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
                 <select id="entidad" style="flex:1; min-width:220px;">
                     <option>USME</option>
                     <option>KENNEDY</option>
@@ -54,58 +84,84 @@
                 </select>
                 <button id="btnAnalizar">Analizar</button>
             </div>
-            <div id="status" class="status" style="display:none;">
-                Analizando... <span id="cronometro">0:00</span>
+            <div id="status" style="display:none; margin-top:14px; padding:14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; color:#2563eb; font-weight:700; font-size:13px;">
+                Procesando análisis… <span id="cronometro">0:00</span>
             </div>
         </div>
 
-        <div id="resultados" class="results" style="display:none;">
+        <div class="panel">
+            <label>Buscar persona o empresa por documento (cédula / NIT)</label>
+            <div class="search-panel">
+                <input id="docBusca" type="text" placeholder="Ej: 51699228">
+                <button id="btnBuscarDoc">Buscar documento</button>
+                <button id="btnLimpiar" style="background:#f1f5f9; color:#475569; border:1.5px solid #cbd5e1;">Limpiar</button>
+            </div>
+            <div id="docResult"></div>
+        </div>
+
+        <div id="resultados" style="display:none;">
             <div class="stats" id="stats"></div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Nivel</th>
-                        <th>Proveedor</th>
-                        <th>Antecedente</th>
-                        <th>Fuente</th>
-                        <th style="text-align:right;">Valor</th>
-                    </tr>
-                </thead>
-                <tbody id="alertasTable"></tbody>
-            </table>
+            
+            <div class="panel">
+                <div class="filters" id="filters">
+                    <button class="filter-btn active" data-filtro="TODAS">Todas</button>
+                    <button class="filter-btn" data-filtro="CRITICA">Críticas</button>
+                    <button class="filter-btn" data-filtro="ALTA">Altas</button>
+                    <button class="filter-btn" data-filtro="MEDIA">Medias</button>
+                    <button class="filter-btn" data-filtro="INFO">Info</button>
+                </div>
+                <input id="busqueda" type="text" placeholder="Buscar por proveedor, documento, sanción, entidad u objeto…" style="margin-bottom:14px;">
+                <div style="overflow-x:auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:30px;"></th>
+                                <th>Nivel</th>
+                                <th>Proveedor</th>
+                                <th>Antecedente</th>
+                                <th>Fuente</th>
+                                <th style="text-align:right;">Valor contrato</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alertasTable"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
-        const btnAnalizar = document.getElementById('btnAnalizar');
-        const entidadSelect = document.getElementById('entidad');
-        const statusDiv = document.getElementById('status');
-        const resultadosDiv = document.getElementById('resultados');
-        const statsDiv = document.getElementById('stats');
-        const alertasTable = document.getElementById('alertasTable');
-        const cronometroSpan = document.getElementById('cronometro');
+        let resultado = null;
+        let abierta = null;
 
-        const COLORES = {
-            CRITICA: '#dc2626',
-            ALTA: '#ea580c',
-            MEDIA: '#ca8a04',
-            INFO: '#64748b'
-        };
+        document.getElementById('btnAnalizar').addEventListener('click', analizar);
+        document.getElementById('btnBuscarDoc').addEventListener('click', buscarDoc);
+        document.getElementById('btnLimpiar').addEventListener('click', limpiar);
+        document.getElementById('busqueda').addEventListener('input', renderTable);
 
-        btnAnalizar.addEventListener('click', analizar);
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                renderTable();
+            });
+        });
 
         async function analizar() {
-            const entidad = entidadSelect.value;
-            btnAnalizar.disabled = true;
-            statusDiv.style.display = 'block';
-            resultadosDiv.style.display = 'none';
-            alertasTable.innerHTML = '';
-            statsDiv.innerHTML = '';
+            const entidad = document.getElementById('entidad').value;
+            const btn = document.getElementById('btnAnalizar');
+            const status = document.getElementById('status');
+            const resultados = document.getElementById('resultados');
+            
+            btn.disabled = true;
+            status.style.display = 'block';
+            resultados.style.display = 'none';
+            abierta = null;
 
             let tiempo = 0;
             const timer = setInterval(() => {
                 tiempo++;
-                cronometroSpan.textContent = Math.floor(tiempo / 60) + ':' + String(tiempo % 60).padStart(2, '0');
+                document.getElementById('cronometro').textContent = Math.floor(tiempo / 60) + ':' + String(tiempo % 60).padStart(2, '0');
             }, 1000);
 
             try {
@@ -117,8 +173,8 @@
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-
                     buffer += decoder.decode(value, { stream: true });
+
                     const lines = buffer.split('\n');
                     buffer = lines.pop();
 
@@ -127,6 +183,7 @@
                             try {
                                 const data = JSON.parse(line.substring(6));
                                 if (data.total_alertas !== undefined) {
+                                    resultado = data;
                                     mostrarResultados(data);
                                 }
                             } catch (e) {}
@@ -138,43 +195,85 @@
             }
 
             clearInterval(timer);
-            statusDiv.style.display = 'none';
-            btnAnalizar.disabled = false;
+            status.style.display = 'none';
+            btn.disabled = false;
         }
 
-        function mostrarResultados(resultado) {
-            resultadosDiv.style.display = 'block';
-
-            // Stats
-            statsDiv.innerHTML = `
-                <div class="stat-card" style="border-left-color:#2563eb;">
-                    <div class="stat-number">${resultado.total_contratos}</div>
-                    <div class="stat-label">Contratos analizados</div>
+        function mostrarResultados(data) {
+            document.getElementById('resultados').style.display = 'block';
+            
+            const colores = { CRITICA: '#dc2626', ALTA: '#ea580c', MEDIA: '#ca8a04', INFO: '#64748b' };
+            document.getElementById('stats').innerHTML = [
+                { label: 'Contratos analizados', valor: data.total_contratos, color: '#2563eb', sub: data.entidad },
+                { label: 'Alertas totales', valor: data.total_alertas, color: '#0f172a', sub: data.fecha_analisis },
+                { label: 'Críticas', valor: data.criticas, color: colores.CRITICA, sub: 'Contrato posterior a inhabilidad' },
+                { label: 'Altas', valor: data.altas, color: colores.ALTA, sub: 'Inhabilidad vigente' }
+            ].map(s => `
+                <div class="stat-card" style="border-left-color:${s.color};">
+                    <div class="stat-number" style="color:${s.color};">${s.valor}</div>
+                    <div class="stat-label">${s.label}</div>
+                    ${s.sub ? `<div class="stat-sub">${s.sub}</div>` : ''}
                 </div>
-                <div class="stat-card" style="border-left-color:#0f172a;">
-                    <div class="stat-number">${resultado.total_alertas}</div>
-                    <div class="stat-label">Alertas totales</div>
-                </div>
-                <div class="stat-card" style="border-left-color:#dc2626;">
-                    <div class="stat-number">${resultado.criticas}</div>
-                    <div class="stat-label">Críticas</div>
-                </div>
-                <div class="stat-card" style="border-left-color:#ea580c;">
-                    <div class="stat-number">${resultado.altas}</div>
-                    <div class="stat-label">Altas</div>
-                </div>
-            `;
-
-            // Tabla
-            alertasTable.innerHTML = resultado.alertas.slice(0, 50).map(a => `
-                <tr>
-                    <td><span class="badge badge-${a.nivel.toLowerCase()}">${a.nivel}</span></td>
-                    <td><strong>${a.proveedor_secop}</strong><br><small>${a.documento}</small></td>
-                    <td>${a.sancion}</td>
-                    <td>${a.fuente}</td>
-                    <td style="text-align:right; font-family:monospace; font-weight:700;">$${parseInt(a.valor || 0).toLocaleString('es-CO')}</td>
-                </tr>
             `).join('');
+
+            renderTable();
+        }
+
+        function renderTable() {
+            if (!resultado) return;
+
+            const filtro = document.querySelector('.filter-btn.active').dataset.filtro;
+            const busqueda = document.getElementById('busqueda').value.toLowerCase();
+            
+            const alertas = resultado.alertas.filter(a => {
+                const okNivel = filtro === 'TODAS' || a.nivel === filtro;
+                const okBusca = !busqueda || a.proveedor_secop.toLowerCase().includes(busqueda) || a.documento.includes(busqueda) || a.sancion.toLowerCase().includes(busqueda) || a.entidad.toLowerCase().includes(busqueda) || (a.objeto || '').toLowerCase().includes(busqueda);
+                return okNivel && okBusca;
+            });
+
+            const colores = { CRITICA: '#dc2626', ALTA: '#ea580c', MEDIA: '#ca8a04', INFO: '#64748b' };
+            document.getElementById('alertasTable').innerHTML = alertas.length === 0 
+                ? `<tr><td colspan="6" style="text-align:center; color:#94a3b8; padding:28px;">Sin alertas para este filtro.</td></tr>`
+                : alertas.map((a, i) => `
+                    <tr onclick="toggleDetalle(${i})" style="cursor:pointer; background:${abierta === i ? '#f8fafc' : 'white'};">
+                        <td style="color:#94a3b8;">${abierta === i ? '▼' : '▶'}</td>
+                        <td><span class="badge badge-${a.nivel.toLowerCase()}">${a.nivel}</span></td>
+                        <td><strong>${a.proveedor_secop}</strong><br><small>CC ${a.documento}</small></td>
+                        <td><div>${a.sancion}</div><small style="color:#94a3b8;">${a.tipo}</small></td>
+                        <td style="font-size:12px;">${a.fuente}</td>
+                        <td style="text-align:right; font-family:monospace; font-weight:700;">$${parseInt(a.valor || 0).toLocaleString('es-CO')}</td>
+                    </tr>
+                `).join('');
+        }
+
+        function toggleDetalle(i) {
+            abierta = abierta === i ? null : i;
+            renderTable();
+        }
+
+        async function buscarDoc() {
+            const doc = document.getElementById('docBusca').value;
+            if (!doc) return;
+            try {
+                const r = await fetch(`https://sistema-gestion-contractual.onrender.com/api/vfi/buscar?doc=${encodeURIComponent(doc)}`, { method: 'POST' });
+                const data = await r.json();
+                if (data.total === 0) {
+                    document.getElementById('docResult').innerHTML = `<div style="margin-top:14px; padding:14px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:9px; color:#166534; font-size:13px;">El documento ${data.documento} no aparece en SIRI ni en el Boletín.</div>`;
+                } else {
+                    document.getElementById('docResult').innerHTML = `<div style="margin-top:14px;"><div style="font-size:13px; font-weight:700; color:#b91c1c; margin-bottom:10px;">⚠️ ${data.total} antecedente(s)</div>${data.hallazgos.map(h => `<div style="padding:14px; background:#fef2f2; border:1px solid #fecaca; border-radius:9px; margin-bottom:8px;"><strong>${h.nombre}</strong> <small style="color:#94a3b8;">${h.fuente}</small><br><small><b>Sanción:</b> ${h.sancion}</small></div>`).join('')}</div>`;
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        function limpiar() {
+            resultado = null;
+            abierta = null;
+            document.getElementById('resultados').style.display = 'none';
+            document.getElementById('docResult').innerHTML = '';
+            document.getElementById('docBusca').value = '';
+            document.getElementById('busqueda').value = '';
         }
     </script>
 </body>
