@@ -20,7 +20,7 @@ def analizar_stream():
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                cwd=os.path.dirname(os.path.abspath(__file__))
+                cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
             )
             
             # Leer stderr (logs de progreso)
@@ -50,7 +50,7 @@ def buscar_documento():
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            cwd=os.path.dirname(os.path.abspath(__file__))
+            cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
         )
         
         stdout, stderr = proc.communicate()
