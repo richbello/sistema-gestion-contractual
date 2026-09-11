@@ -4,15 +4,17 @@ Agrupa pagos por Rubro+Fondo, cruza contra PAC de varios meses e indica
 en qué mes se cubre si falta en el mes evaluado.
 
 CORRECCIONES (sep 2026):
- 1. La llave de cruce del rubro se normaliza (_norm_rubro): ignora ceros a la
-    izquierda y lecturas tipo float ("230689.0"), para que "0230689" de la
-    plantilla cruce con "230689" de BOGDATA/PAC y viceversa.
- 2. Se elimina el candado `if pac_mes > 0`: ahora, si el mes evaluado está en 0
-    pero hay PAC en meses siguientes, se reporta la cobertura acumulada en lugar
-    de marcar "SIN DISPONIBILIDAD PAC".
- 3. Se distingue "SIN MATCH EN PAC" (no hubo cruce) de "SIN DISPONIBILIDAD PAC"
-    (cruzó pero el PAC programado en meses es 0), y la disponibilidad se suma
-    solo de filas con período de mes válido (evita doble conteo con filas Total).
+ 1. _importe_por_bloque: el Rubro y Fondos se leen de la fila P40 (donde vienen
+    realmente), no de la fila C. Se conserva compatibilidad si algún formato los
+    trae en la fila C.
+ 2. Cruce de rubro robusto (_norm_rubro): ignora ceros a la izquierda, la letra
+    'O' inicial y lecturas float ("230689.0").
+ 3. El rubro se cruza contra 'Progr.financiación' y, si no hay match, contra
+    'Pos.presupuestaria' (los rubros de cuentas por pagar como O230689 viven en
+    Pos.presupuestaria, no en Progr.financiación).
+ 4. Se elimina el candado `if pac_mes > 0` y se distingue "SIN MATCH EN PAC" de
+    "SIN DISPONIBILIDAD PAC". Las sumas solo usan filas con período de mes válido
+    (excluye REZAGO / PAC NO EJECUTADO / Total → sin doble conteo).
 """
 import pandas as pd
 import numpy as np
@@ -23,17 +25,21 @@ COLS_PAC_REQUERIDAS = {'Descripción período presupuesto', 'Progr.financiación
 
 
 def _norm_rubro(x):
-    """Clave de cruce robusta para el rubro.
-    Ignora ceros a la izquierda y lecturas tipo float ('230689.0'),
-    de modo que '0230689' (plantilla) cruce con '230689' (PAC/BOGDATA).
-    Los códigos de 24 dígitos quedan iguales en ambos lados (pierden el mismo
-    cero inicial), así que no se rompe ningún cruce que hoy funciona.
+    """Clave de cruce robusta: solo dígitos, sin ceros a la izquierda.
+    Así 'O230689', '0230689' y '230689.0' normalizan todos a '230689'.
     """
     s = str(x).strip()
     if s.endswith('.0'):
         s = s[:-2]
     s = ''.join(ch for ch in s if ch.isdigit())
     return s.lstrip('0')
+
+
+def _celda(plantilla, col, i):
+    if col not in plantilla.columns:
+        return None
+    v = str(plantilla[col].iat[i]).strip()
+    return None if v in ('', 'nan', 'None', 'NaT') else v
 
 
 def _importe_por_bloque(plantilla):
@@ -49,19 +55,28 @@ def _importe_por_bloque(plantilla):
     for i in range(len(plantilla)):
         if tipo.iat[i] == 'C':
             cerrar()
-            rubro = str(plantilla['Rubro'].iat[i]).strip()
-            fondo = str(plantilla['Fondos'].iat[i]).strip()
-            valor = None
+            rubro = fondo = valor = None
             abierto = True
+            # compatibilidad: algunos formatos traen rubro/fondos en la fila C
+            if _celda(plantilla, 'Rubro', i):
+                rubro = _celda(plantilla, 'Rubro', i)
+            if _celda(plantilla, 'Fondos', i):
+                fondo = _celda(plantilla, 'Fondos', i)
+        elif clave.iat[i] == 40:
+            # el Rubro y Fondos vienen normalmente en la fila P40
+            if rubro is None and _celda(plantilla, 'Rubro', i):
+                rubro = _celda(plantilla, 'Rubro', i)
+            if fondo is None and _celda(plantilla, 'Fondos', i):
+                fondo = _celda(plantilla, 'Fondos', i)
+            if valor is None and pd.notna(imp.iat[i]):
+                if 'RP Doc Presupuestal' in plantilla.columns:
+                    doc = pd.to_numeric(plantilla['RP Doc Presupuestal'].iat[i], errors='coerce')
+                    if imp.iat[i] != doc:
+                        valor = imp.iat[i]
+                else:
+                    valor = imp.iat[i]
         elif clave.iat[i] == 31 and pd.notna(imp.iat[i]):
             valor = imp.iat[i]
-        elif clave.iat[i] == 40 and valor is None and pd.notna(imp.iat[i]):
-            if 'RP Doc Presupuestal' in plantilla.columns:
-                doc = pd.to_numeric(plantilla['RP Doc Presupuestal'].iat[i], errors='coerce')
-                if imp.iat[i] != doc:
-                    valor = imp.iat[i]
-            else:
-                valor = imp.iat[i]
     cerrar()
     return pd.DataFrame(filas, columns=['Rubro', 'Fondos', 'importe'])
 
@@ -120,11 +135,11 @@ def cuadrar_pac(ruta_plantilla, ruta_pac, mes_pac, ruta_salida_excel):
     if mes_num_actual is None:
         raise ValueError(f"Mes '{mes_pac}' no reconocido.")
 
-    # --- Llaves normalizadas para el cruce (defecto 1) ---
+    tiene_pos = 'Pos.presupuestaria' in pac.columns
     pac['_periodo_norm'] = pac['Descripción período presupuesto'].apply(_normalizar_periodo)
-    pac['_rubro_norm']   = pac['Progr.financiación'].apply(_norm_rubro)
+    pac['_progr_norm']   = pac['Progr.financiación'].apply(_norm_rubro)
+    pac['_pos_norm']     = pac['Pos.presupuestaria'].apply(_norm_rubro) if tiene_pos else ''
     pac['_fondo_norm']   = pac['Fondos'].astype(str).str.strip().str.upper()
-    # marca de fila con período de MES válido (excluye filas Total / vacías)
     pac['_es_mes'] = pac['_periodo_norm'].apply(lambda p: _parse_mes_numero(p) is not None)
 
     mes_norm = _normalizar_periodo(mes_pac)
@@ -137,12 +152,16 @@ def cuadrar_pac(ruta_plantilla, ruta_pac, mes_pac, ruta_salida_excel):
 
         rub_norm = _norm_rubro(rub)
         fon_norm = fon.upper()
-        pac_rf = pac[(pac['_rubro_norm'] == rub_norm) & (pac['_fondo_norm'] == fon_norm)]
-        pac_rf_meses = pac_rf[pac_rf['_es_mes']]
+        base_fondo = pac['_fondo_norm'] == fon_norm
 
+        # 1º cruce por Progr.financiación; si no hay match, por Pos.presupuestaria
+        pac_rf = pac[(pac['_progr_norm'] == rub_norm) & base_fondo]
+        if pac_rf.empty and tiene_pos:
+            pac_rf = pac[(pac['_pos_norm'] == rub_norm) & base_fondo]
+
+        pac_rf_meses = pac_rf[pac_rf['_es_mes']]
         pac_mes = float(pac_rf_meses[pac_rf_meses['_periodo_norm'] == mes_norm]['Disponibilidad PAC'].sum())
 
-        # disponibilidad por período, solo del mes actual en adelante
         pac_acumulado = {}
         for periodo in periodos:
             mes_n = _parse_mes_numero(periodo)
@@ -151,10 +170,8 @@ def cuadrar_pac(ruta_plantilla, ruta_pac, mes_pac, ruta_salida_excel):
                     pac_rf_meses[pac_rf_meses['_periodo_norm'] == _normalizar_periodo(periodo)]['Disponibilidad PAC'].sum()
                 )
 
-        # disponibilidad total del rubro (solo filas de mes → sin doble conteo)
         disp_meses = float(pac_rf_meses['Disponibilidad PAC'].sum())
 
-        # --- Lógica de cobertura (defecto 2 y 3) ---
         if pac_rf.empty:
             cobertura = "SIN MATCH EN PAC"
         elif disp_meses <= 0:
