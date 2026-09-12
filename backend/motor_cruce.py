@@ -123,108 +123,6 @@ def procesar(entidad, max_reg):
     boletin = cargar_boletin()
 
     alertas = []
-<<<<<<< HEAD
-    hoy = datetime.now()
-
-    for c in contratos:
-        doc = norm(c.get("documento_proveedor", ""))
-        if not doc:
-            continue
-
-        fecha_firma = parse_fecha(c.get("fecha_de_firma", ""))
-
-        # --- Cruce con SIRI (disciplinario/penal) ---
-        if doc in siri:
-            for s in siri[doc]:
-                f_ini = parse_fecha(s.get("fecha_efectos_juridicos", ""))
-                f_fin = fin_inhabilidad(
-                    f_ini, s.get("duracion_anos", ""),
-                    s.get("duracion_mes", ""), s.get("duracion_dias", "")
-                )
-                tiene_inhab = "INHABILIDAD" in (s.get("sanciones", "") or "").upper() or f_fin is not None
-                inhab_vigente = bool(f_fin and f_fin > hoy)
-
-                # REGLA DE ORO
-                nivel = "INFO"
-                motivo = ""
-                if tiene_inhab and inhab_vigente:
-                    if fecha_firma and f_ini and fecha_firma >= f_ini:
-                        nivel = "CRITICA"
-                        motivo = "Contrato firmado DESPUÉS de la inhabilidad"
-                    else:
-                        nivel = "ALTA"
-                        motivo = "Inhabilidad vigente (contrato anterior; vigilar renovación)"
-                elif tiene_inhab:
-                    nivel = "MEDIA"
-                    motivo = "Antecedente con inhabilidad vencida"
-                else:
-                    nivel = "INFO"
-                    motivo = "Antecedente sin inhabilidad (multa/amonestación)"
-
-                nombre_siri = " ".join(filter(None, [
-                    s.get("primer_nombre", ""), s.get("segundo_nombre", ""),
-                    s.get("primer_apellido", ""), s.get("segundo_apellido", "")
-                ])).strip()
-
-                alertas.append({
-                    "fuente": "SIRI (Procuraduría)",
-                    "nivel": nivel,
-                    "motivo": motivo,
-                    "documento": doc,
-                    "proveedor_secop": c.get("proveedor_adjudicado", ""),
-                    "nombre_fuente": nombre_siri,
-                    "tipo": s.get("tipo_inhabilidad", ""),
-                    "sancion": s.get("sanciones", ""),
-                    "fecha_sancion": s.get("fecha_efectos_juridicos", ""),
-                    "fin_inhabilidad": f_fin.strftime("%d/%m/%Y") if f_fin else "",
-                    "vigente": "SÍ" if inhab_vigente else "NO",
-                    "entidad": c.get("nombre_entidad", ""),
-                    "valor": c.get("valor_del_contrato", ""),
-                    "estado": c.get("estado_contrato", ""),
-                    "fecha_firma": c.get("fecha_de_firma", "").split("T")[0] if c.get("fecha_de_firma") else "",
-                    "objeto": (c.get("objeto_del_contrato", "") or "")[:200],
-                    "autoridad": s.get("autoridad", ""),
-                })
-
-        # --- Cruce con Boletín (fiscal) ---
-        if doc in boletin:
-            for b in boletin[doc]:
-                alertas.append({
-                    "fuente": "Boletín (Contraloría)",
-                    "nivel": "ALTA",
-                    "motivo": "Responsable fiscal con contrato público",
-                    "documento": doc,
-                    "proveedor_secop": c.get("proveedor_adjudicado", ""),
-                    "nombre_fuente": b.get("nombre", ""),
-                    "tipo": "FISCAL",
-                    "sancion": "RESPONSABILIDAD FISCAL",
-                    "fecha_sancion": "",
-                    "fin_inhabilidad": "",
-                    "vigente": "SÍ",
-                    "entidad": c.get("nombre_entidad", ""),
-                    "valor": c.get("valor_del_contrato", ""),
-                    "estado": c.get("estado_contrato", ""),
-                    "fecha_firma": c.get("fecha_de_firma", "").split("T")[0] if c.get("fecha_de_firma") else "",
-                    "objeto": (c.get("objeto_del_contrato", "") or "")[:200],
-                    "autoridad": b.get("Ente que Reporta", ""),
-                })
-
-    # Ordenar por gravedad
-    orden = {"CRITICA": 0, "ALTA": 1, "MEDIA": 2, "INFO": 3}
-    alertas.sort(key=lambda a: orden.get(a["nivel"], 9))
-
-    # Guardar CSV
-    csv_path = OUT_DIR / f"alertas_{entidad.replace(' ', '_')}.csv"
-    if alertas:
-        with open(csv_path, "w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=alertas[0].keys())
-            w.writeheader()
-            w.writerows(alertas)
-
-    # Guardar JSON (para el dashboard)
-    json_path = OUT_DIR / f"alertas_{entidad.replace(' ', '_')}.json"
-    resumen = {
-=======
     
     # Cruzar SIRI
     for doc, antecedentes in list(siri.items())[:max_alertas]:
@@ -259,23 +157,12 @@ def procesar(entidad, max_reg):
                     })
     
     resultado = {
->>>>>>> 86fc35667d69bce6caa7adbb37bb34c4e5b84556
         "entidad": entidad,
         "fecha_analisis": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "total_contratos": len(contratos),
         "registros_siri": len(siri),
         "registros_boletin": len(boletin),
         "total_alertas": len(alertas),
-<<<<<<< HEAD
-        "criticas": len([a for a in alertas if a["nivel"] == "CRITICA"]),
-        "altas": len([a for a in alertas if a["nivel"] == "ALTA"]),
-        "medias": len([a for a in alertas if a["nivel"] == "MEDIA"]),
-        "info": len([a for a in alertas if a["nivel"] == "INFO"]),
-        "alertas": alertas,
-    }
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(resumen, f, ensure_ascii=False, indent=2)
-=======
         "criticas": 0,
         "altas": len(alertas),
         "medias": 0,
@@ -284,7 +171,6 @@ def procesar(entidad, max_reg):
     }
     
     print(json.dumps(resultado, ensure_ascii=False))
->>>>>>> 86fc35667d69bce6caa7adbb37bb34c4e5b84556
 
     # Reporte en consola
     print("\n" + "=" * 70, file=sys.stderr)
