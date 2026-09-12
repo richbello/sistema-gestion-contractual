@@ -8,3 +8,4 @@ Werkzeug==3.0.3
 gunicorn==22.0.0
 python-calamine==0.2.3
 
+reportlab==5.0.1
