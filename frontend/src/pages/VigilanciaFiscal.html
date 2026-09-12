@@ -273,11 +273,31 @@
 
                     for (const line of lines) {
                         if (line.startsWith('data: ')) {
+                            const contenido = line.substring(6).trim();
                             try {
-                                const data = JSON.parse(line.substring(6));
-                                if (data.total_alertas !== undefined) {
+                                const data = JSON.parse(contenido);
+                                if (typeof data === 'object' && data.total_alertas !== undefined) {
                                     resultado = data;
                                     mostrarResultados(data);
+                                } else if (typeof data === 'string') {
+                                    // Mensaje de progreso
+                                    const st = document.getElementById('status');
+                                    let logDiv = document.getElementById('progreso-log');
+                                    if (!logDiv) {
+                                        logDiv = document.createElement('div');
+                                        logDiv.id = 'progreso-log';
+                                        logDiv.style.cssText = 'margin-top:10px;font-family:monospace;font-size:12px;color:#475569;max-height:160px;overflow-y:auto;line-height:1.6;';
+                                        st.appendChild(logDiv);
+                                    }
+                                    let color = '#64748b', icono = '';
+                                    if (data.includes('SIRI')) { color = '#7c3aed'; icono = '&#128203; '; }
+                                    else if (data.includes('Boletin') || data.includes('Contraloria')) { color = '#ca8a04'; icono = '&#128176; '; }
+                                    else if (data.includes('SECOP')) { color = '#2563eb'; icono = '&#128196; '; }
+                                    const linea = document.createElement('div');
+                                    linea.style.color = color;
+                                    linea.innerHTML = icono + data.replace(/\[.*?\]/, '').trim();
+                                    logDiv.appendChild(linea);
+                                    logDiv.scrollTop = logDiv.scrollHeight;
                                 }
                             } catch (e) {}
                         }
