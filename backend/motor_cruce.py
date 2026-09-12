@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, csv, json, requests
+import sys, csv, json
 from datetime import datetime
 from collections import defaultdict
 
