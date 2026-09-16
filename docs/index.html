@@ -45,6 +45,7 @@
       <div class="nav-submenu abierto" id="submenu-tramite">
         <span class="nav-subgrupo-titulo">Personas Naturales</span>
         <button class="nav-item nav-sub" data-vista="extraccion"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6M9 9h1"/></svg> Extracción de causaciones</button>
+        <button class="nav-item nav-sub" data-vista="sipago"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7h18M3 12h18M3 17h10"/><circle cx="18" cy="17" r="3"/></svg> Extracción SIPAGO</button>
         <button class="nav-item nav-sub" data-vista="plantilla"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9h18M9 9v11"/></svg> Plantilla de pagos</button>
         <button class="nav-item nav-sub" data-vista="pac"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg> Cuadre PAC</button>
         <button class="nav-item nav-sub" data-vista="validacion"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/></svg> Validación de plantilla</button>
@@ -58,6 +59,7 @@
       <button class="nav-item" data-vista="planeacion"><span class="nav-numero">06</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> Planeación</button>
       <button class="nav-item" data-vista="oxp"><span class="nav-numero">07</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 9v11"/></svg> CDP-CRP de OXP</button>
       <button class="nav-item" data-vista="exogena"><span class="nav-numero">08</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 18h4M9 12h2"/></svg> Reportes Exógena</button>
+      <button class="nav-item" data-vista="vigilancia-fiscal"><span class="nav-numero">09</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12l4 4 12-12"/><path d="M12 2l7 4v6c0 5-3 8-7 10-4-2-7-5-7-10V6z"/></svg> Vigilancia Fiscal IA</button>
     </nav>
 
     <nav class="nav-modulos" style="margin-top: 20px; border-top: 1px solid #ddd; padding-top: 15px;">
@@ -818,6 +820,14 @@
     </section>
 
     <!-- ===================== VISTA 10: Reportes Exógena ===================== -->
+    <section class="vista" id="vista-vigilancia-fiscal" hidden style="background:#f0f2f5; min-height:100vh; padding:20px;">
+      <div id="vfi-container" style="background:white; border-radius:12px; padding:20px;">
+        <h2>⚖️ Vigilancia Fiscal IA</h2>
+        <p>Cruce en tiempo real: SECOP II × SIRI (Procuraduría) × Boletín (Contraloría)</p>
+        <iframe id="vfi-iframe" src="src/pages/VigilanciaFiscal.html" style="width:100%; height:800px; border:none; border-radius:8px;"></iframe>
+      </div>
+    </section>
+
     <section class="vista" id="vista-exogena" hidden>
       <style>
         .exo-tabs { display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid #e2e8f0; }
@@ -870,6 +880,128 @@
       </div>
     </section>
 
+  <!-- ===================== VISTA: EXTRACCIÓN SIPAGO ===================== -->
+<section class="vista" id="vista-sipago" hidden>
+
+  <!-- ---------- Bases de referencia guardadas ---------- -->
+  <div class="panel" style="margin-bottom:22px;">
+    <div class="panel-acento-superior"></div>
+    <div class="panel-cuerpo">
+      <div class="intro-modulo">
+        <span class="paso-eyebrow">Bases de referencia</span>
+        <h2>Bases guardadas en el servidor</h2>
+        <p>Quedan almacenadas y se reutilizan cada mes. Solo hay que reemplazarlas
+           cuando se actualice el Reporte CRP o lleguen nuevos históricos de pago.</p>
+      </div>
+
+      <div class="alerta" id="sipago-estado-crp"></div>
+      <div class="alerta" id="sipago-estado-bancaria" style="margin-top:8px;"></div>
+      <div class="alerta alerta-error" id="alerta-sipago-bases"></div>
+
+      <div class="grid-form" style="margin-top:18px;">
+
+        <!-- Base CRP -->
+        <form class="campo" id="form-sipago-crp">
+          <label>Reporte CRP</label>
+          <div class="ayuda">De aquí salen CRP (col. AR) y SALDO CRP (col. AQ).
+            Si un contratista tiene varios CRP se toma el de mayor saldo.</div>
+          <div class="dropzone" id="drop-sipago-crp">
+            <input type="file" id="input-sipago-crp" accept=".xlsx,.xls">
+            <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+            <div class="dropzone-texto"><strong>Arrastra el archivo</strong> o haz clic</div>
+            <div class="dropzone-detalle">.xlsx · un archivo</div>
+          </div>
+          <div class="lista-archivos" id="lista-sipago-crp"></div>
+          <div class="barra-acciones">
+            <button type="submit" class="btn btn-primario" id="btn-sipago-crp">Reemplazar base CRP</button>
+            <div class="estado-proceso" id="estado-sipago-crp"><span class="spinner"></span> Procesando…</div>
+          </div>
+        </form>
+
+        <!-- Base bancaria -->
+        <form class="campo" id="form-sipago-bancaria">
+          <label>Históricos de pago</label>
+          <div class="ayuda">De aquí salen Código Bco, Tipo Cta y No Cuenta.
+            <strong>Cárgalos de más antiguo a más reciente:</strong> se conserva la
+            cuenta del archivo más reciente de cada contratista.</div>
+          <div class="dropzone" id="drop-sipago-historicos">
+            <input type="file" id="input-sipago-historicos" accept=".xlsx,.xls" multiple>
+            <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+            <div class="dropzone-texto"><strong>Arrastra los archivos</strong> o haz clic</div>
+            <div class="dropzone-detalle">.xlsx · selección múltiple</div>
+          </div>
+          <div class="lista-archivos" id="lista-sipago-historicos"></div>
+          <div class="barra-acciones">
+            <button type="submit" class="btn btn-primario" id="btn-sipago-bancaria">Reemplazar base bancaria</button>
+            <div class="estado-proceso" id="estado-sipago-bancaria"><span class="spinner"></span> Procesando…</div>
+          </div>
+        </form>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- Consolidación ---------- -->
+  <form class="panel" id="form-sipago-procesar">
+    <div class="panel-acento-superior"></div>
+    <div class="panel-cuerpo">
+      <div class="intro-modulo">
+        <span class="paso-eyebrow">Consolidación</span>
+        <h2>Reporte del Periodo SIPAGO</h2>
+        <p>Se cruza por cédula contra las dos bases y se genera el Excel con el mismo
+           formato del archivo de extracción.</p>
+      </div>
+
+      <div class="grid-form una-col">
+        <div class="campo">
+          <label>Reporte del Periodo</label>
+          <div class="ayuda">Listado mensual de contratistas a pagar.</div>
+          <div class="dropzone" id="drop-sipago-reporte">
+            <input type="file" id="input-sipago-reporte" accept=".xlsx,.xls" required>
+            <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+            <div class="dropzone-texto"><strong>Arrastra el archivo</strong> o haz clic</div>
+            <div class="dropzone-detalle">.xlsx · un archivo</div>
+          </div>
+          <div class="lista-archivos" id="lista-sipago-reporte"></div>
+        </div>
+      </div>
+
+      <div class="barra-acciones">
+        <button type="submit" class="btn btn-primario" id="btn-sipago-procesar">
+          <svg class="icono-btn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          Consolidar
+        </button>
+        <div class="estado-proceso" id="estado-sipago"><span class="spinner"></span> Cruzando información…</div>
+      </div>
+
+      <div class="alerta alerta-error" id="alerta-sipago"></div>
+
+      <div class="resultados" id="resultados-sipago">
+        <div class="resultados-cabecera">
+          <svg class="sello-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>
+          <h3>Consolidación completada</h3>
+        </div>
+        <div class="metricas-grid" id="metricas-sipago"></div>
+        <div id="detalle-sipago-pendientes" style="margin-top:18px;"></div>
+        <div class="descarga-card" style="margin-top:18px;">
+          <div class="descarga-info">
+            <svg class="descarga-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+            <div>
+              <div class="descarga-nombre">Extraccion_SIPAGO.xlsx</div>
+              <div class="descarga-detalle">Mismo formato del archivo de extracción</div>
+            </div>
+          </div>
+          <a class="btn btn-dorado" id="link-descarga-sipago">
+            <svg class="icono-btn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+            Descargar Excel
+          </a>
+        </div>
+      </div>
+    </div>
+  </form>
+</section>
+
+
   </main>
 </div>
 
@@ -878,6 +1010,7 @@
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
 <script src="config.js"></script>
 <script src="static/js/main.js"></script>
+<script src="static/js/modulo-extraccion-sipago.js"></script>
 <!-- <script src="static/js/modulo-04.js"></script> DESACTIVADO: flujo viejo que llamaba a procesar-lite y descargaba archivo incorrecto. El Modulo 04 activo vive en main.js -->
 <script src="static/js/modulo-05.js"></script>
 <script src="static/js/modulo-06.js"></script>
@@ -889,5 +1022,18 @@
   <script src="static/js/estadocuenta-masivo.js"></script>
   <script src="static/js/modulo-12-oxp.js"></script>
   <script src="static/js/modulo-10-exogena.js"></script>
+
+<script>
+// Vigilancia Fiscal - Módulo 09
+document.addEventListener('DOMContentLoaded', function() {
+    const btnVFI = document.querySelector('[data-vista="vigilancia-fiscal"]');
+    if (btnVFI) {
+        btnVFI.addEventListener('click', function() {
+            document.querySelectorAll('.vista').forEach(v => v.hidden = true);
+            document.getElementById('vista-vigilancia-fiscal').hidden = false;
+        });
+    }
+});
+</script>
 </body>
 </html>

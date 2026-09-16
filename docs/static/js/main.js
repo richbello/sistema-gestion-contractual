@@ -21,18 +21,21 @@ function descargarSaneada(b64) {
 
 const MODULOS = {
   extraccion:    { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Extracción de causaciones" },
+  sipago: { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Extracción SIPAGO" },
+
   plantilla:     { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Plantilla de pagos" },
   pac:           { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Cuadre PAC" },
   validacion:    { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Validación de plantilla" },
-  estadocuenta:  { eyebrow: "Módulo 2", titulo: "Estados de Cuenta" },
-  historico:     { eyebrow: "Módulo 3", titulo: "Históricos de Pagos" },
-  presupuestal:  { eyebrow: "Módulo 4", titulo: "Análisis Presupuestal" },
-  contratacion:  { eyebrow: "Módulo 5", titulo: "Contratación" },
-  planeacion:    { eyebrow: "Módulo 6", titulo: "Planeación PDL" },
-  ciberseguridad:{ eyebrow: "Módulo 7", titulo: "Ciberseguridad" },
-  licencias:     { eyebrow: "Módulo 8", titulo: "Licencias" },
-  oxp:           { eyebrow: "Módulo 9", titulo: "CDP-CRP de OXP" },
-  exogena:       { eyebrow: "Módulo 10", titulo: "Reportes Exógena" },
+  estadocuenta:  { eyebrow: "Módulo 02 · Estados de Cuenta", titulo: "Estados de Cuenta" },
+  historico:     { eyebrow: "Módulo 03 · Históricos de Pagos", titulo: "Históricos de Pagos" },
+  presupuestal:  { eyebrow: "Módulo 04 · Análisis Presupuestal", titulo: "Análisis Presupuestal" },
+  contratacion:  { eyebrow: "Módulo 05 · Contratación", titulo: "Contratación" },
+  planeacion:    { eyebrow: "Módulo 06 · Planeación", titulo: "Planeación PDL" },
+  ciberseguridad:{ eyebrow: "Administración · Ciberseguridad", titulo: "Ciberseguridad" },
+  licencias:     { eyebrow: "Administración · Licencias", titulo: "Licencias" },
+  oxp:           { eyebrow: "Módulo 07 · CDP-CRP de OXP", titulo: "CDP-CRP de OXP" },
+  exogena:       { eyebrow: "Módulo 08 · Reportes Exógena", titulo: "Reportes Exógena" },
+  "vigilancia-fiscal": { eyebrow: "Módulo 09 · Vigilancia Fiscal IA", titulo: "Vigilancia Fiscal IA" },
 };
 /* ---------------------------- Navegación ---------------------------- */
 function cambiarVista(idVista) {
