@@ -21,6 +21,8 @@ function descargarSaneada(b64) {
 
 const MODULOS = {
   extraccion:    { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Extracción de causaciones" },
+  sipago: { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Extracción SIPAGO" },
+
   plantilla:     { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Plantilla de pagos" },
   pac:           { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Cuadre PAC" },
   validacion:    { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Validación de plantilla" },
