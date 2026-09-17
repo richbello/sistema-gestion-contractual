@@ -403,15 +403,22 @@ document.getElementById("form-pac").addEventListener("submit", async (e) => {
     tbody.innerHTML = "";
     data.tabla.forEach(fila => {
       const tr = document.createElement("tr");
-      let pillClase = "pill-sin-disp";
-      if (fila.Cobertura.startsWith("CUBRE")) pillClase = "pill-cubre";
-      else if (fila.Cobertura.startsWith("NO CUBRE")) pillClase = "pill-no-cubre";
+      let pillClase = "";
+      if (fila.Cobertura.startsWith("CUBRE") || fila.Cobertura.startsWith("OK")) pillClase = "pill-cubre";
+      else if (fila.Cobertura.includes("NO CUBRE")) pillClase = "pill-no-cubre";
+
+      // Toda Diferencia negativa se resalta en rojo + negrita.
+      let claseDif = "";
+      if (Number(fila.Diferencia) < 0) {
+        claseDif = ' style="color:#c0141c;font-weight:700;"';
+      }
+
       tr.innerHTML = `
         <td>${fila.Rubro ?? ""}</td>
         <td>${fila.Fondos ?? ""}</td>
         <td>${formatearMoneda(fila.Importe_Total)}</td>
         <td>${formatearMoneda(fila.Disponibilidad_PAC)}</td>
-        <td>${formatearMoneda(fila.Diferencia)}</td>
+        <td${claseDif}>${formatearMoneda(fila.Diferencia)}</td>
         <td><span class="pill-cobertura ${pillClase}">${fila.Cobertura}</span></td>
       `;
       tbody.appendChild(tr);
