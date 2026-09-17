@@ -16,13 +16,14 @@ def create_app():
 
     app.config["UPLOAD_FOLDER"] = os.path.join(os.path.dirname(__file__), "..", "uploads")
     app.config["OUTPUT_FOLDER"] = os.path.join(os.path.dirname(__file__), "..", "outputs")
-    app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
-    app.config["MAX_FORM_MEMORY_SIZE"] = 1 * 1024 * 1024  # 1 MB: uploads mas grandes van a disco
+    app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500 MB
+    app.config["MAX_FORM_MEMORY_SIZE"] = 50 * 1024 * 1024  # 50 MB: uploads mas grandes van a disco
 
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
     os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
 
-    CORS(app)
+    # CORS permisivo para desarrollo (Codespace, localhost)
+    CORS(app, supports_credentials=True, origins=["*"], allow_headers=["*"], methods=["*"])
 
     # Registro de módulos (blueprints)
     from .routes.extraccion import extraccion_bp

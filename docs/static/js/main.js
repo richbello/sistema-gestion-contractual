@@ -673,3 +673,54 @@ document.getElementById("form-estadocuenta").addEventListener("submit", async (e
     mostrarEstado("estado-estadocuenta", false);
   }
 });
+
+/* ---------------------------- Base CRP del Cuadre PAC ---------------------------- */
+async function refrescarEstadoBaseCRP() {
+  const el = document.getElementById("estado-base-crp");
+  if (!el || !API_BASE) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/cuadre-pac/estado-base-crp`);
+    const data = await resp.json();
+    if (data.existe) {
+      el.textContent = "✓ Base CRP cargada (actualizada " + data.actualizado + ")";
+      el.style.color = "#15803d";
+    } else {
+      el.textContent = "⚠ Sin base CRP. Cárguela una vez para poder cuadrar.";
+      el.style.color = "#b45309";
+    }
+  } catch (err) {
+    el.textContent = "No se pudo consultar el estado de la base CRP.";
+    el.style.color = "#6b7280";
+  }
+}
+
+(function initBaseCRP() {
+  const input = document.getElementById("input-base-crp");
+  if (!input) return;
+  input.addEventListener("change", async () => {
+    const archivo = input.files[0];
+    if (!archivo) return;
+    mostrarAlerta("alerta-base-crp", "");
+    const btn = document.getElementById("btn-cargar-base-crp");
+    const el = document.getElementById("estado-base-crp");
+    btn.disabled = true;
+    el.textContent = "Cargando base CRP…";
+    el.style.color = "#6b7280";
+    const fd = new FormData();
+    fd.append("crp", archivo);
+    try {
+      const resp = await fetch(`${API_BASE}/api/cuadre-pac/cargar-base-crp`, { method: "POST", body: fd });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        mostrarAlerta("alerta-base-crp", data.mensaje || "No se pudo cargar la base CRP.");
+      }
+    } catch (err) {
+      mostrarAlerta("alerta-base-crp", "Error de conexión al cargar la base CRP.");
+    } finally {
+      btn.disabled = false;
+      input.value = "";
+      refrescarEstadoBaseCRP();
+    }
+  });
+  refrescarEstadoBaseCRP();
+})();
