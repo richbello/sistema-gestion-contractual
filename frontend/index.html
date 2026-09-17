@@ -217,7 +217,23 @@
       <form class="panel" id="form-pac">
         <div class="panel-acento-superior"></div>
         <div class="panel-cuerpo">
-          <div class="grid-form">
+                    <div class="grid-form una-col" style="margin-bottom:18px;">
+            <div class="campo">
+              <label>Base CRP del periodo</label>
+              <div class="ayuda">Se carga una vez por periodo. Con ella, el cuadre trae Rubro y Fondos automáticamente — la plantilla NO debe llevarlos.</div>
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px;">
+                <span id="estado-base-crp" style="font-size:13px;color:#6b7280;">Consultando estado…</span>
+                <input type="file" id="input-base-crp" accept=".xlsx,.xls" style="display:none;">
+                <button type="button" class="btn btn-secundario" id="btn-cargar-base-crp"
+                        onclick="document.getElementById('input-base-crp').click()">
+                  Cargar / actualizar CRP
+                </button>
+              </div>
+              <div class="alerta alerta-error" id="alerta-base-crp" style="margin-top:10px;"></div>
+            </div>
+          </div>
+
+<div class="grid-form">
             <div class="campo">
               <label>Plantilla de pagos</label>
               <div class="ayuda">Archivo generado en el Módulo 02.</div>

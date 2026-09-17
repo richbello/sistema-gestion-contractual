@@ -20,7 +20,9 @@ import pandas as pd
 import numpy as np
 import unicodedata
 
-COLS_PLANTILLA_REQUERIDAS = {'Tipo Registro P', 'Clave Contab.', 'importe', 'Rubro', 'Fondos'}
+from .enriquecer_rubros import construir_mapa_rubros, enriquecer_plantilla
+
+COLS_PLANTILLA_REQUERIDAS = {'Tipo Registro P', 'Clave Contab.', 'importe'}
 COLS_PAC_REQUERIDAS = {'Descripción período presupuesto', 'Progr.financiación', 'Fondos', 'Disponibilidad PAC'}
 
 
@@ -107,9 +109,19 @@ def _convertir_tipos(obj):
         return obj
 
 
-def cuadrar_pac(ruta_plantilla, ruta_pac, mes_pac, ruta_salida_excel):
+def cuadrar_pac(ruta_plantilla, ruta_pac, mes_pac, ruta_salida_excel, ruta_crp=None):
     plantilla = pd.read_excel(ruta_plantilla, sheet_name='Hoja1')
     pac = pd.read_excel(ruta_pac, sheet_name='Data')
+
+    # La plantilla de SAP NO trae Rubro/Fondos (BOGDATA los rechaza).
+    # Se traen del Reporte CRP cruzando por No. Compromiso, en memoria, sin tocar el archivo.
+    if ruta_crp:
+        d_rubro, d_fondos = construir_mapa_rubros(ruta_crp)
+        encontrados, sin_match = enriquecer_plantilla(plantilla, d_rubro, d_fondos)
+        if encontrados == 0:
+            raise ValueError(
+                'No se pudo cruzar ningun compromiso de la plantilla contra el CRP. '
+                'Verifica que el Reporte CRP cargado corresponde al periodo.')
 
     faltantes_p = COLS_PLANTILLA_REQUERIDAS - set(plantilla.columns)
     faltantes_pac = COLS_PAC_REQUERIDAS - set(pac.columns)
