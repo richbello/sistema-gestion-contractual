@@ -174,28 +174,52 @@ def construir_base_bancaria(rutas_historicos):
             if len(v) and v.str.match(RE_CUENTA).sum() > 0:
                 col_cuenta = c
                 break
-        if col_cuenta is None:
-            omitidos.append(f"{nombre_arch}: sin columna de cuenta bancaria")
-            continue
-
         col_id = _buscar_col(df, 'identificación', 'identificacion', 'nit', 'cedula', 'documento')
         if col_id is None:
             omitidos.append(f"{nombre_arch}: sin columna de identificación")
             continue
 
-        col_cod = _buscar_col(df, 'codigo de banco', 'código de banco')
+        # Formato A: columna unica "<numero> AHORROS|CORRIENTE <banco>"
+        if col_cuenta is not None:
+            col_cod = _buscar_col(df, 'codigo de banco', 'código de banco')
+            sub = df[df[col_cuenta].notna()].copy()
+            partes = sub[col_cuenta].astype(str).str.extract(RE_CUENTA)
+            bloque = pd.DataFrame({
+                'cedula':     sub[col_id].apply(_digitos),
+                'No Cuenta':  partes[0].astype(str).str.replace(r'[^\d]', '', regex=True),
+                'Tipo Cta':   partes[1].str.upper().map(TIPO_CTA),
+                'banco_txt':  partes[2].astype(str).str.strip(),
+                'cod_banco':  _num(sub[col_cod]) if col_cod else pd.NA,
+                '_orden':     orden,
+            })
+        else:
+            # Formato B: columnas separadas (No Cuenta, Tipo Cta, Codigo, Banco)
+            col_num = _buscar_col(df, 'no cuenta', 'nº cuenta', 'n° cuenta',
+                                  'numero de cuenta', 'número de cuenta', 'numero cuenta')
+            if col_num is None:
+                omitidos.append(f"{nombre_arch}: sin columna de cuenta bancaria")
+                continue
+            col_tipo = _buscar_col(df, 'tipo cta', 'tipo de cuenta', 'tipo cuenta')
+            col_cod  = _buscar_col(df, 'codigo', 'código')
+            col_bco  = _buscar_col(df, 'nombre del banco', 'banco')
 
-        sub = df[df[col_cuenta].notna()].copy()
-        partes = sub[col_cuenta].astype(str).str.extract(RE_CUENTA)
+            def _tipo(v):
+                s = str(v).strip().upper().replace('.0', '')
+                if s in ('01', '02'):
+                    return s
+                if s in TIPO_CTA:
+                    return TIPO_CTA[s]
+                return s.zfill(2) if s.isdigit() else ''
 
-        bloque = pd.DataFrame({
-            'cedula':     sub[col_id].apply(_digitos),
-            'No Cuenta':  partes[0].astype(str).str.replace(r'[^\d]', '', regex=True),
-            'Tipo Cta':   partes[1].str.upper().map(TIPO_CTA),
-            'banco_txt':  partes[2].astype(str).str.strip(),
-            'cod_banco':  _num(sub[col_cod]) if col_cod else pd.NA,
-            '_orden':     orden,
-        })
+            bloque = pd.DataFrame({
+                'cedula':     df[col_id].apply(_digitos),
+                'No Cuenta':  df[col_num].astype(str).str.replace(r'\.0$', '', regex=True).str.replace(r'[^\d]', '', regex=True),
+                'Tipo Cta':   df[col_tipo].apply(_tipo) if col_tipo is not None else '02',
+                'banco_txt':  df[col_bco].astype(str).str.strip() if col_bco is not None else '',
+                'cod_banco':  _num(df[col_cod]) if col_cod is not None else pd.NA,
+                '_orden':     orden,
+            })
+
         bloque = bloque[(bloque['cedula'].str.len() > 0) &
                         (bloque['No Cuenta'].str.len() > 0)]
         bloques.append(bloque)
