@@ -79,40 +79,271 @@ document.getElementById("form-sipago-crp").addEventListener("submit", async (e) 
   }
 });
 
+/* ==========================================================================
+   Base bancaria — la extracción ocurre AQUÍ, en el navegador.
+
+   Los históricos de pago pesan decenas de MB y al abrirlos en el servidor
+   ocupaban cientos de MB de RAM, lo que mataba al worker de Render (512 MB).
+   El navegador tiene memoria de sobra, así que lee los Excel con SheetJS y
+   solo manda al backend la lista final de cédula + cuenta: unos cientos de KB.
+   ========================================================================== */
+
+const SIPAGO_RE_CUENTA = /^\s*(\S+)\s+(AHORROS|CORRIENTE)\s+(.+)$/i;
+const SIPAGO_TIPO_CTA  = { AHORROS: "02", CORRIENTE: "01" };
+
+// Orden de prioridad para ubicar la cédula. 'documento' va de último a
+// propósito: el histórico trae 'Nº documento' (consecutivo contable de SAP)
+// mucho antes que 'Nº identificación', y buscar columna por columna hacía que
+// ganara el consecutivo y la base quedara con llaves equivocadas.
+const SIPAGO_ID_CLAVES = ["identificación", "identificacion", "nit", "cedula", "cédula", "documento"];
+const SIPAGO_EXCLUIR   = ["clase", "tipo doc", "tipo de doc"];
+
+function sipagoDigitos(valor) {
+  if (valor === null || valor === undefined) return "";
+  return String(valor).trim().replace(/\.0$/, "").replace(/[^\d]/g, "");
+}
+
+function sipagoIdxPorPrioridad(encabezados, claves) {
+  for (const clave of claves) {
+    for (let i = 0; i < encabezados.length; i++) {
+      const h = encabezados[i];
+      if (SIPAGO_EXCLUIR.some((x) => h.includes(x))) continue;
+      if (h.includes(clave)) return i;
+    }
+  }
+  return -1;
+}
+
+/* La columna de cuenta se detecta por CONTENIDO, no por nombre: el histórico
+   trae varias columnas llamadas 'Cuenta bancaria' y solo una viene con el
+   formato '<numero> AHORROS|CORRIENTE <banco>'. */
+function sipagoDetectarColCuenta(filas, muestra = 300) {
+  const conteo = new Map();
+  const tope = Math.min(filas.length, muestra);
+  for (let f = 0; f < tope; f++) {
+    const fila = filas[f] || [];
+    for (let i = 0; i < fila.length; i++) {
+      const v = fila[i];
+      if (v === null || v === undefined) continue;
+      if (SIPAGO_RE_CUENTA.test(String(v))) {
+        conteo.set(i, (conteo.get(i) || 0) + 1);
+      }
+    }
+  }
+  let mejor = -1, max = 0;
+  conteo.forEach((n, i) => { if (n > max) { max = n; mejor = i; } });
+  return mejor;
+}
+
+/* Extrae las cuentas de un archivo ya leído. Devuelve {registros, motivo}. */
+function sipagoExtraerCuentas(arrayBuffer, orden) {
+  const libro = XLSX.read(arrayBuffer, {
+    type: "array",
+    dense: true,       // menos objetos en memoria para hojas grandes
+    cellDates: false,
+    cellStyles: false,
+    cellNF: false,
+  });
+  const hoja = libro.Sheets[libro.SheetNames[0]];
+  if (!hoja) return { registros: [], motivo: "el archivo está vacío" };
+
+  const filas = XLSX.utils.sheet_to_json(hoja, { header: 1, raw: true, blankrows: false });
+  if (!filas.length) return { registros: [], motivo: "el archivo está vacío" };
+
+  const encabezados = (filas[0] || []).map((h) =>
+    h === null || h === undefined ? "" : String(h).trim().toLowerCase());
+
+  const iId = sipagoIdxPorPrioridad(encabezados, SIPAGO_ID_CLAVES);
+  if (iId < 0) return { registros: [], motivo: "sin columna de identificación" };
+
+  const iCod = sipagoIdxPorPrioridad(encabezados, ["codigo de banco", "código de banco"]);
+
+  const cuerpo = filas.slice(1);
+  const iCta = sipagoDetectarColCuenta(cuerpo);
+
+  // Formato A: una sola columna "<numero> AHORROS|CORRIENTE <banco>"
+  if (iCta >= 0) {
+    const registros = [];
+    for (const fila of cuerpo) {
+      const bruto = fila[iCta];
+      if (bruto === null || bruto === undefined) continue;
+      const m = SIPAGO_RE_CUENTA.exec(String(bruto));
+      if (!m) continue;
+
+      const cedula = sipagoDigitos(fila[iId]);
+      const cuenta = m[1].replace(/[^\d]/g, "");
+      if (!cedula || !cuenta) continue;
+
+      registros.push({
+        cedula,
+        No_Cuenta: cuenta,
+        Tipo_Cta: SIPAGO_TIPO_CTA[m[2].toUpperCase()] || "",
+        banco_txt: m[3].trim(),
+        cod_banco: iCod >= 0 ? fila[iCod] : null,
+        _orden: orden,
+      });
+    }
+    return { registros, motivo: null };
+  }
+
+  // Formato B: la cuenta viene en columnas separadas (número, tipo, código, banco)
+  const iNum = sipagoIdxPorPrioridad(encabezados, SIPAGO_NUM_CTA_CLAVES);
+  if (iNum < 0) return { registros: [], motivo: "sin columna de cuenta bancaria" };
+  const iTipo = sipagoIdxPorPrioridad(encabezados, SIPAGO_TIPO_CTA_CLAVES);
+  const iCodB = sipagoIdxPorPrioridad(encabezados, SIPAGO_COD_BANCO_CLAVES);
+  const iBco = sipagoIdxPorPrioridad(encabezados, SIPAGO_NOMBRE_BANCO_CLAVES);
+
+  const registros = [];
+  for (const fila of cuerpo) {
+    const cuenta = sipagoSoloDigitosNum(fila[iNum]);
+    const cedula = sipagoDigitos(fila[iId]);
+    if (!cedula || !cuenta) continue;
+    const banco = iBco >= 0 ? fila[iBco] : null;
+    registros.push({
+      cedula,
+      No_Cuenta: cuenta,
+      Tipo_Cta: iTipo >= 0 ? sipagoTipoCuentaB(fila[iTipo]) : "02",
+      banco_txt: banco === null || banco === undefined ? "" : String(banco).trim(),
+      cod_banco: iCodB >= 0 ? fila[iCodB] : null,
+      _orden: orden,
+    });
+  }
+  return { registros, motivo: null };
+}
+
+/* Formato B: claves y normalizadores (espejo de la versión del servidor). */
+const SIPAGO_NUM_CTA_CLAVES = ["no cuenta", "nº cuenta", "n° cuenta", "numero de cuenta",
+  "número de cuenta", "numero cuenta"];
+const SIPAGO_TIPO_CTA_CLAVES = ["tipo cta", "tipo de cuenta", "tipo cuenta"];
+const SIPAGO_COD_BANCO_CLAVES = ["codigo de banco", "código de banco", "codigo banco", "codigo", "código"];
+const SIPAGO_NOMBRE_BANCO_CLAVES = ["nombre del banco", "nombre banco", "banco"];
+
+function sipagoSoloDigitosNum(valor) {
+  if (valor === null || valor === undefined) return "";
+  return String(valor).trim().replace(/\.0$/, "").replace(/\D/g, "");
+}
+
+function sipagoTipoCuentaB(valor) {
+  if (valor === null || valor === undefined) return "";
+  const s = String(valor).trim().toUpperCase().replace(/\.0$/, "");
+  if (s === "01" || s === "02") return s;
+  if (SIPAGO_TIPO_CTA[s]) return SIPAGO_TIPO_CTA[s];
+  return /^\d+$/.test(s) ? s.padStart(2, "0") : "";
+}
+
+/* Deduplica dejando la cuenta MÁS RECIENTE (la del archivo de mayor orden;
+   dentro de un mismo archivo gana la primera aparición) y arma el mapa
+   banco -> código con todas las filas, antes de perderlas en la deduplicación. */
+function sipagoConsolidar(todos) {
+  const votos = new Map();
+  for (const r of todos) {
+    if (r.cod_banco === null || r.cod_banco === undefined || String(r.cod_banco).trim() === "") continue;
+    const cod = parseInt(Number(r.cod_banco), 10);
+    if (!Number.isFinite(cod)) continue;
+    if (!r.banco_txt) continue; // sin nombre de banco no hay de qué aprender el código
+    if (!votos.has(r.banco_txt)) votos.set(r.banco_txt, new Map());
+    const m = votos.get(r.banco_txt);
+    m.set(cod, (m.get(cod) || 0) + 1);
+  }
+  const mapa_bancos = {};
+  votos.forEach((m, banco) => {
+    let mejor = null, max = -1;
+    [...m.keys()].sort((a, b) => a - b).forEach((cod) => {
+      if (m.get(cod) > max) { max = m.get(cod); mejor = cod; }
+    });
+    if (mejor !== null) mapa_bancos[banco] = mejor;
+  });
+
+  const elegidos = new Map();
+  for (const r of todos) {
+    const previo = elegidos.get(r.cedula);
+    if (!previo || r._orden > previo._orden) elegidos.set(r.cedula, r);
+  }
+
+  const registros = [...elegidos.values()].map((r) => ({
+    cedula: r.cedula,
+    "No Cuenta": r.No_Cuenta,
+    "Tipo Cta": r.Tipo_Cta,
+    banco_txt: r.banco_txt,
+    cod_banco: r.cod_banco,
+    _orden: r._orden,
+  }));
+
+  return { registros, mapa_bancos };
+}
+
 /* ---------- Reemplazar base bancaria ---------- */
 document.getElementById("form-sipago-bancaria").addEventListener("submit", async (e) => {
   e.preventDefault();
   mostrarAlerta("alerta-sipago-bases", "");
 
-  const archivos = document.getElementById("input-sipago-historicos").files;
+  const archivos = [...document.getElementById("input-sipago-historicos").files];
   if (!archivos.length) {
     mostrarAlerta("alerta-sipago-bases", "Debes adjuntar al menos un histórico de pagos.");
     return;
   }
 
-  const fd = new FormData();
-  for (const f of archivos) fd.append("historicos", f);
-
   const btn = document.getElementById("btn-sipago-bancaria");
+  const estado = document.getElementById("estado-sipago-bancaria");
+  const textoEstado = (txt) => {
+    if (!estado) return;
+    const nodo = [...estado.childNodes].find((n) => n.nodeType === Node.TEXT_NODE);
+    if (nodo) nodo.nodeValue = " " + txt;
+  };
+
   btn.disabled = true;
   mostrarEstado("estado-sipago-bancaria", true);
+
   try {
-    const resp = await fetch(`${API_SIPAGO}/cargar-base-bancaria`, { method: "POST", body: fd });
+    const todos = [];
+    const omitidos = [];
+
+    for (let i = 0; i < archivos.length; i++) {
+      const archivo = archivos[i];
+      textoEstado(`Leyendo ${archivo.name} (${i + 1} de ${archivos.length})…`);
+      // Cede el hilo para que el navegador alcance a repintar el estado.
+      await new Promise((r) => setTimeout(r, 0));
+
+      try {
+        const buffer = await archivo.arrayBuffer();
+        const { registros, motivo } = sipagoExtraerCuentas(buffer, i);
+        if (motivo) omitidos.push(`${archivo.name}: ${motivo}`);
+        else todos.push(...registros);
+      } catch (err) {
+        omitidos.push(`${archivo.name}: no se pudo leer (${err.message})`);
+      }
+    }
+
+    if (!todos.length) {
+      mostrarAlerta("alerta-sipago-bases",
+        "No se encontraron cuentas bancarias en los archivos."
+        + (omitidos.length ? ` ${omitidos.join("; ")}` : ""));
+      return;
+    }
+
+    const { registros, mapa_bancos } = sipagoConsolidar(todos);
+
+    textoEstado(`Guardando ${registros.length} cuentas…`);
+    const resp = await fetch(`${API_SIPAGO}/cargar-base-bancaria-json`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ registros, mapa_bancos, omitidos }),
+    });
     const data = await resp.json();
     if (!resp.ok || !data.ok) {
       mostrarAlerta("alerta-sipago-bases", data.mensaje || "No se pudo cargar la base bancaria.");
       return;
     }
     if (data.omitidos && data.omitidos.length) {
-      mostrarAlerta("alerta-sipago-bases",
-        `Archivos omitidos: ${data.omitidos.join("; ")}`);
+      mostrarAlerta("alerta-sipago-bases", `Archivos omitidos: ${data.omitidos.join("; ")}`);
     }
     await sipagoRefrescarBases();
   } catch (err) {
-    mostrarAlerta("alerta-sipago-bases", "Error de conexión con el servidor.");
+    mostrarAlerta("alerta-sipago-bases", `No se pudo procesar el histórico: ${err.message}`);
   } finally {
     btn.disabled = false;
     mostrarEstado("estado-sipago-bancaria", false);
+    textoEstado("Procesando…");
   }
 });
 
