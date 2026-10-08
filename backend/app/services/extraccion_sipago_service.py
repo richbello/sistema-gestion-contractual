@@ -17,6 +17,8 @@ La salida replica exactamente el esquema de 20 columnas del Excel del Módulo 01
 import os
 import re
 import json
+import itertools
+import openpyxl
 import pandas as pd
 
 # ── Esquema de salida (idéntico al Módulo 01) ────────────────────────────────
@@ -101,6 +103,80 @@ def _buscar_col(df, *claves):
     return None
 
 
+# Claves para ubicar la cédula, EN ORDEN DE PRIORIDAD.
+# 'documento' va de último a propósito: el histórico de pagos trae 'Nº documento'
+# (el consecutivo contable de SAP) mucho antes que 'Nº identificación', y buscar
+# columna por columna hacía que ganara el consecutivo y la base quedara con
+# llaves equivocadas. Probando clave por clave, 'identificación' gana siempre.
+_ID_CLAVES = ('identificación', 'identificacion', 'nit', 'cedula', 'cédula', 'documento')
+
+
+def _idx_por_prioridad(encabezados, claves, excluir=_EXCLUIR_COL):
+    """Índice de columna probando las claves EN ORDEN (no columna por columna).
+    `encabezados` es la lista de nombres ya en minúscula."""
+    for clave in claves:
+        for i, h in enumerate(encabezados):
+            if any(x in h for x in excluir):
+                continue
+            if clave in h:
+                return i
+    return None
+
+
+# Formato B: cuenta en columnas separadas. Claves en orden de prioridad.
+_NUM_CTA_CLAVES     = ('no cuenta', 'nº cuenta', 'n° cuenta', 'numero de cuenta',
+                       'número de cuenta', 'numero cuenta')
+_TIPO_CTA_CLAVES    = ('tipo cta', 'tipo de cuenta', 'tipo cuenta')
+_COD_BANCO_CLAVES   = ('codigo de banco', 'código de banco', 'codigo banco', 'codigo', 'código')
+_NOMBRE_BANCO_CLAVES = ('nombre del banco', 'nombre banco', 'banco')
+
+
+def _solo_digitos_num(valor):
+    """Número de cuenta sin separadores ni el '.0' que deja Excel en los floats."""
+    if valor is None:
+        return ""
+    s = re.sub(r'\.0$', '', str(valor).strip())
+    return re.sub(r'\D', '', s)
+
+
+def _tipo_cuenta_b(valor):
+    """Tipo de cuenta del Formato B: acepta '01'/'02', 'AHORROS'/'CORRIENTE' o un número."""
+    if valor is None:
+        return ""
+    s = re.sub(r'\.0$', '', str(valor).strip().upper())
+    if s in ('01', '02'):
+        return s
+    if s in TIPO_CTA:
+        return TIPO_CTA[s]
+    return s.zfill(2) if s.isdigit() else ""
+
+
+def _celda(fila, idx):
+    """Valor de la celda, tolerando filas más cortas que el encabezado."""
+    if idx is None or idx >= len(fila):
+        return None
+    return fila[idx]
+
+
+def _detectar_col_cuenta(filas_muestra):
+    """Índice de la columna de cuenta, detectada por CONTENIDO y no por nombre.
+
+    El histórico trae varias columnas llamadas 'Cuenta bancaria'; solo una viene
+    con el formato '<numero> AHORROS|CORRIENTE <banco>'. Se elige la que más
+    coincidencias tenga en la muestra.
+    """
+    conteo = {}
+    for fila in filas_muestra:
+        for i, v in enumerate(fila):
+            if v is None:
+                continue
+            if RE_CUENTA.match(str(v)):
+                conteo[i] = conteo.get(i, 0) + 1
+    if not conteo:
+        return None
+    return max(conteo, key=conteo.get)
+
+
 def _fmt_contrato(valor):
     """'310 2026' -> '310-2026' ; '1 2026' -> '001-2026'.
     El número de contrato se rellena a 3 dígitos, como en el Excel de extracción."""
@@ -149,114 +225,215 @@ def construir_base_crp(ruta_reporte_crp):
 
 
 # ── Construcción de la BASE BANCARIA ─────────────────────────────────────────
+COLS_BASE_BANCARIA = ['cedula', 'Código Bco', 'Tipo Cta', 'No Cuenta']
+
+
+def extraer_cuentas_historico(ruta, muestra=300):
+    """Extrae las cuentas de UN histórico de pago sin cargarlo entero en memoria.
+
+    openpyxl en modo read_only recorre la hoja fila por fila y aquí solo se
+    conservan 3 celdas de cada una. Medido contra un histórico real de 35.441
+    filas x 80 columnas: ~106 MB de pico, frente a ~225 MB de pd.read_excel y
+    ~440 MB del motor calamine (calamine es más rápido pero gasta MÁS memoria,
+    por eso no sirve como solución en el free tier de 512 MB).
+
+    Devuelve (registros, motivo_omision). Si todo sale bien, motivo es None.
+    """
+    try:
+        wb = openpyxl.load_workbook(ruta, read_only=True, data_only=True)
+    except Exception as e:
+        return [], f"no se pudo abrir ({e})"
+
+    try:
+        ws = wb[wb.sheetnames[0]]
+        filas = ws.iter_rows(values_only=True)
+
+        try:
+            encabezados = [str(h).strip().lower() if h is not None else ""
+                           for h in next(filas)]
+        except StopIteration:
+            return [], "el archivo está vacío"
+
+        i_id = _idx_por_prioridad(encabezados, _ID_CLAVES)
+        if i_id is None:
+            return [], "sin columna de identificación"
+        i_cod = _idx_por_prioridad(encabezados, ('codigo de banco', 'código de banco'))
+
+        # La columna de cuenta se detecta leyendo una muestra, porque el nombre
+        # no la distingue (hay varias 'Cuenta bancaria' y solo una trae el formato).
+        buffer = list(itertools.islice(filas, muestra))
+        i_cta = _detectar_col_cuenta(buffer)
+        todas = itertools.chain(buffer, filas)
+
+        if i_cta is not None:
+            # Formato A: una sola columna "<numero> AHORROS|CORRIENTE <banco>"
+            registros = []
+            for fila in todas:
+                bruto = _celda(fila, i_cta)
+                if bruto is None:
+                    continue
+                m = RE_CUENTA.match(str(bruto))
+                if not m:
+                    continue
+
+                cedula = _digitos(_celda(fila, i_id))
+                cuenta = re.sub(r'[^\d]', '', m.group(1))
+                if not cedula or not cuenta:
+                    continue
+
+                registros.append({
+                    'cedula':    cedula,
+                    'No Cuenta': cuenta,
+                    'Tipo Cta':  TIPO_CTA.get(m.group(2).upper()),
+                    'banco_txt': m.group(3).strip(),
+                    'cod_banco': _celda(fila, i_cod) if i_cod is not None else None,
+                })
+            return registros, None
+
+        # Formato B: la cuenta viene en columnas separadas (número, tipo, código, banco)
+        i_num = _idx_por_prioridad(encabezados, _NUM_CTA_CLAVES)
+        if i_num is None:
+            return [], "sin columna de cuenta bancaria"
+        i_tipo = _idx_por_prioridad(encabezados, _TIPO_CTA_CLAVES)
+        i_cod_b = _idx_por_prioridad(encabezados, _COD_BANCO_CLAVES)
+        i_bco = _idx_por_prioridad(encabezados, _NOMBRE_BANCO_CLAVES)
+
+        registros = []
+        for fila in todas:
+            cuenta = _solo_digitos_num(_celda(fila, i_num))
+            cedula = _digitos(_celda(fila, i_id))
+            if not cedula or not cuenta:
+                continue
+            banco = _celda(fila, i_bco) if i_bco is not None else None
+            registros.append({
+                'cedula':    cedula,
+                'No Cuenta': cuenta,
+                'Tipo Cta':  _tipo_cuenta_b(_celda(fila, i_tipo)) if i_tipo is not None else '02',
+                'banco_txt': '' if banco is None else str(banco).strip(),
+                'cod_banco': _celda(fila, i_cod_b) if i_cod_b is not None else None,
+            })
+        return registros, None
+    except Exception as e:
+        return [], f"no se pudo leer ({e})"
+    finally:
+        try:
+            wb.close()
+        except Exception:
+            pass
+
+
+def _codigo_banco(valor, banco_txt, mapa):
+    """Código de banco a 3 dígitos. Si la fila no lo trae, se deduce del nombre
+    del banco usando el mapa aprendido de los archivos que sí lo incluyen."""
+    v = valor
+    if v is None or (isinstance(v, float) and pd.isna(v)) or str(v).strip() == "":
+        v = mapa.get(banco_txt)
+    if v is None:
+        return ""
+    try:
+        return str(int(float(v))).zfill(3)
+    except (TypeError, ValueError):
+        return ""
+
+
+def consolidar_registros_bancarios(registros, mapa_bancos=None):
+    """Arma la base bancaria final a partir de registros ya extraídos.
+
+    `registros` viene de `extraer_cuentas_historico` (servidor) o del navegador
+    vía SheetJS; cada uno debe traer '_orden' (el índice del archivo del que
+    salió). Regla acordada: gana la cuenta MÁS RECIENTE, es decir la del archivo
+    de mayor '_orden'; dentro de un mismo archivo gana la primera aparición.
+    """
+    if not registros:
+        return pd.DataFrame(columns=COLS_BASE_BANCARIA)
+
+    # Mapa banco -> código, aprendido de las filas que sí traen 'Codigo de Banco'.
+    mapa = {}
+    conteos = {}
+    for r in registros:
+        v = r.get('cod_banco')
+        if v is None or str(v).strip() == "":
+            continue
+        try:
+            cod = int(float(v))
+        except (TypeError, ValueError):
+            continue
+        banco = r.get('banco_txt') or ""
+        if not banco:
+            continue  # sin nombre de banco no hay de qué aprender el código
+        conteos.setdefault(banco, {})
+        conteos[banco][cod] = conteos[banco].get(cod, 0) + 1
+    for banco, votos in conteos.items():
+        # Más frecuente; si empatan, el código menor (igual que .mode() de pandas).
+        mapa[banco] = min(sorted(votos), key=lambda c: -votos[c])
+    if mapa_bancos:
+        for banco, cod in mapa_bancos.items():
+            mapa.setdefault(banco, cod)
+
+    # Deduplicación: nos quedamos con la cuenta del archivo más reciente.
+    elegidos = {}
+    for r in registros:
+        ced = str(r.get('cedula') or "").strip()
+        if not ced:
+            continue
+        orden = r.get('_orden', 0) or 0
+        previo = elegidos.get(ced)
+        if previo is None or orden > previo.get('_orden', 0):
+            elegidos[ced] = {**r, '_orden': orden}
+
+    filas = [{
+        'cedula':     ced,
+        'Código Bco': _codigo_banco(r.get('cod_banco'), r.get('banco_txt') or "", mapa),
+        'Tipo Cta':   r.get('Tipo Cta') or "",
+        'No Cuenta':  r.get('No Cuenta') or "",
+    } for ced, r in elegidos.items()]
+
+    return pd.DataFrame(filas, columns=COLS_BASE_BANCARIA)
+
+
 def construir_base_bancaria(rutas_historicos):
     """Lee uno o varios históricos de pago y extrae la cuenta de cada contratista.
 
-    La columna de cuenta trae el formato: '<numero> AHORROS|CORRIENTE <banco>'.
     Los archivos se procesan en el orden recibido; el ÚLTIMO gana, de modo que
     basta con enviarlos de más antiguo a más reciente.
+
+    Ojo: esta ruta lee los Excel en el servidor. Funciona para archivos
+    moderados, pero para históricos completos el camino recomendado es que el
+    navegador haga la extracción (endpoint /cargar-base-bancaria-json).
     """
-    bloques = []
+    registros = []
     omitidos = []
 
     for orden, ruta in enumerate(rutas_historicos):
         nombre_arch = os.path.basename(ruta)
-        try:
-            df = pd.read_excel(ruta)
-        except Exception as e:
-            omitidos.append(f"{nombre_arch}: no se pudo leer ({e})")
+        filas, motivo = extraer_cuentas_historico(ruta)
+        if motivo:
+            omitidos.append(f"{nombre_arch}: {motivo}")
             continue
+        for r in filas:
+            r['_orden'] = orden
+        registros.extend(filas)
 
-        # Columna de cuenta = la que contenga el patrón AHORROS/CORRIENTE
-        col_cuenta = None
-        for c in df.columns:
-            v = df[c].dropna().astype(str)
-            if len(v) and v.str.match(RE_CUENTA).sum() > 0:
-                col_cuenta = c
-                break
-        col_id = _buscar_col(df, 'identificación', 'identificacion', 'nit', 'cedula', 'documento')
-        if col_id is None:
-            omitidos.append(f"{nombre_arch}: sin columna de identificación")
+    return consolidar_registros_bancarios(registros), omitidos
+
+
+def base_bancaria_desde_registros(registros, mapa_bancos=None):
+    """Arma la base bancaria con los registros que el navegador ya extrajo."""
+    limpios = []
+    for r in registros or []:
+        cedula = _digitos(r.get('cedula'))
+        cuenta = re.sub(r'[^\d]', '', str(r.get('No Cuenta') or r.get('no_cuenta') or ''))
+        if not cedula or not cuenta:
             continue
-
-        # Formato A: columna unica "<numero> AHORROS|CORRIENTE <banco>"
-        if col_cuenta is not None:
-            col_cod = _buscar_col(df, 'codigo de banco', 'código de banco')
-            sub = df[df[col_cuenta].notna()].copy()
-            partes = sub[col_cuenta].astype(str).str.extract(RE_CUENTA)
-            bloque = pd.DataFrame({
-                'cedula':     sub[col_id].apply(_digitos),
-                'No Cuenta':  partes[0].astype(str).str.replace(r'[^\d]', '', regex=True),
-                'Tipo Cta':   partes[1].str.upper().map(TIPO_CTA),
-                'banco_txt':  partes[2].astype(str).str.strip(),
-                'cod_banco':  _num(sub[col_cod]) if col_cod else pd.NA,
-                '_orden':     orden,
-            })
-        else:
-            # Formato B: columnas separadas (No Cuenta, Tipo Cta, Codigo, Banco)
-            col_num = _buscar_col(df, 'no cuenta', 'nº cuenta', 'n° cuenta',
-                                  'numero de cuenta', 'número de cuenta', 'numero cuenta')
-            if col_num is None:
-                omitidos.append(f"{nombre_arch}: sin columna de cuenta bancaria")
-                continue
-            col_tipo = _buscar_col(df, 'tipo cta', 'tipo de cuenta', 'tipo cuenta')
-            col_cod  = _buscar_col(df, 'codigo', 'código')
-            col_bco  = _buscar_col(df, 'nombre del banco', 'banco')
-
-            def _tipo(v):
-                s = str(v).strip().upper().replace('.0', '')
-                if s in ('01', '02'):
-                    return s
-                if s in TIPO_CTA:
-                    return TIPO_CTA[s]
-                return s.zfill(2) if s.isdigit() else ''
-
-            bloque = pd.DataFrame({
-                'cedula':     df[col_id].apply(_digitos),
-                'No Cuenta':  df[col_num].astype(str).str.replace(r'\.0$', '', regex=True).str.replace(r'[^\d]', '', regex=True),
-                'Tipo Cta':   df[col_tipo].apply(_tipo) if col_tipo is not None else '02',
-                'banco_txt':  df[col_bco].astype(str).str.strip() if col_bco is not None else '',
-                'cod_banco':  _num(df[col_cod]) if col_cod is not None else pd.NA,
-                '_orden':     orden,
-            })
-
-        bloque = bloque[(bloque['cedula'].str.len() > 0) &
-                        (bloque['No Cuenta'].str.len() > 0)]
-        bloques.append(bloque)
-
-    if not bloques:
-        return pd.DataFrame(columns=['cedula', 'Código Bco', 'Tipo Cta', 'No Cuenta']), omitidos
-
-    base = pd.concat(bloques, ignore_index=True)
-
-    # Mapa banco -> código, aprendido de los archivos que sí traen 'Codigo de Banco'.
-    # Sirve para completar el código en los archivos que no lo incluyen.
-    con_cod = base.dropna(subset=['cod_banco'])
-    mapa = {}
-    if len(con_cod):
-        mapa = (con_cod.groupby('banco_txt')['cod_banco']
-                       .agg(lambda s: int(s.mode().iloc[0]))
-                       .to_dict())
-
-    def _cod(row):
-        v = row['cod_banco']
-        if pd.isna(v):
-            v = mapa.get(row['banco_txt'])
-        if v is None or pd.isna(v):
-            return ""
-        try:
-            return str(int(float(v))).zfill(3)
-        except (TypeError, ValueError):
-            return ""
-
-    base['Código Bco'] = base.apply(_cod, axis=1)
-
-    # Regla acordada: la cuenta MÁS RECIENTE (último archivo en el que aparece).
-    base = (base.sort_values('_orden', ascending=False)
-                .drop_duplicates(subset=['cedula'], keep='first')
-                .reset_index(drop=True))
-
-    return base[['cedula', 'Código Bco', 'Tipo Cta', 'No Cuenta']], omitidos
+        limpios.append({
+            'cedula':    cedula,
+            'No Cuenta': cuenta,
+            'Tipo Cta':  r.get('Tipo Cta') or r.get('tipo_cta') or "",
+            'banco_txt': (r.get('banco_txt') or "").strip(),
+            'cod_banco': r.get('cod_banco'),
+            '_orden':    r.get('_orden', 0) or 0,
+        })
+    return consolidar_registros_bancarios(limpios, mapa_bancos)
 
 
 # ── Consolidación ────────────────────────────────────────────────────────────

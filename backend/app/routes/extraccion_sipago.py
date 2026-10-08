@@ -5,6 +5,7 @@ from flask import Blueprint, request, jsonify, current_app, send_file
 from ..services.extraccion_sipago_service import (
     construir_base_crp,
     construir_base_bancaria,
+    base_bancaria_desde_registros,
     guardar_base,
     info_base,
     ejecutar_consolidado,
@@ -101,6 +102,45 @@ def cargar_base_bancaria():
             "registros": int(len(base)),
             "sin_codigo_banco": sin_codigo,
             "omitidos": omitidos,
+            "mensaje": f"Base bancaria actualizada con {len(base)} contratistas.",
+        })
+    except Exception as e:
+        current_app.logger.error(traceback.format_exc())
+        return jsonify({"ok": False, "mensaje": f"Error cargando la base bancaria: {e}"}), 500
+
+
+@extraccion_sipago_bp.route("/cargar-base-bancaria-json", methods=["POST"])
+def cargar_base_bancaria_json():
+    """Reemplaza la base bancaria con los registros que extrajo el navegador.
+
+    El navegador lee los históricos con SheetJS, se queda solo con cédula +
+    cuenta + código de banco y manda eso ya deduplicado. Así el servidor nunca
+    toca el Excel completo: entran unos cientos de KB de JSON en vez de 13 MB
+    de Excel que al parsearse se convertían en cientos de MB y tumbaban al
+    worker (SIGKILL por falta de memoria en el free tier de 512 MB).
+    """
+    try:
+        payload = request.get_json(silent=True) or {}
+        registros = payload.get("registros") or []
+        if not registros:
+            return jsonify({"ok": False,
+                            "mensaje": "No se recibieron cuentas bancarias."}), 400
+
+        base = base_bancaria_desde_registros(registros, payload.get("mapa_bancos"))
+
+        if base.empty:
+            return jsonify({"ok": False,
+                            "mensaje": "No se encontraron cuentas bancarias válidas.",
+                            "omitidos": payload.get("omitidos") or []}), 422
+
+        guardar_base(base, _ruta_base(ARCHIVO_BASE_BANCO))
+        sin_codigo = int((base["Código Bco"].astype(str).str.strip() == "").sum())
+
+        return jsonify({
+            "ok": True,
+            "registros": int(len(base)),
+            "sin_codigo_banco": sin_codigo,
+            "omitidos": payload.get("omitidos") or [],
             "mensaje": f"Base bancaria actualizada con {len(base)} contratistas.",
         })
     except Exception as e:
