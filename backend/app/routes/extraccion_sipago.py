@@ -120,7 +120,7 @@ def cargar_base_bancaria_json():
     worker (SIGKILL por falta de memoria en el free tier de 512 MB).
     """
     try:
-        payload = request.get_json(silent=True) or {}
+        payload = request.get_json(force=True, silent=True) or {}
         registros = payload.get("registros") or []
         if not registros:
             return jsonify({"ok": False,

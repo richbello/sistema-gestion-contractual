@@ -326,7 +326,6 @@ document.getElementById("form-sipago-bancaria").addEventListener("submit", async
     textoEstado(`Guardando ${registros.length} cuentas…`);
     const resp = await fetch(`${API_SIPAGO}/cargar-base-bancaria-json`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ registros, mapa_bancos, omitidos }),
     });
     const data = await resp.json();
