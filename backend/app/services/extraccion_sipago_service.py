@@ -55,7 +55,7 @@ BLOQUES_RETENCION = [
     ('EST_PROCUL', 'ESTAMPILLA PROCULT', lambda h: 'PROCULTURA' in h),
     ('EST_ADULTO', 'ESTAMPILLA ADULTO M',lambda h: 'PROADULTO' in h),
 ]
-# Retenciones en la fuente: van a la plantilla como filas código 44 (HONOR_*/RET2_*).
+# Retenciones en la fuente: la primera con valor va en HONOR_* (fila código 44 en la plantilla).
 CLAVES_RETEFUENTE = ('RF_RENTAS', 'RF_HONOR', 'RF_SERV')
 
 # Posiciones de respaldo (formato original) por si el reporte llega sin encabezados.
@@ -543,7 +543,11 @@ def consolidar(ruta_reporte, base_crp, base_bancaria, ruta_salida):
 
     col_bruto  = _buscar_col(rep, 'valor bruto')
     col_desc   = _buscar_col(rep, 'total descuentos')
-    col_neto   = _buscar_col(rep, 'neto pagar', 'neto a pagar')
+    # Se excluye 'CÓDIGO CUENTA CONTABLE ( NETO A PAGAR)', que trae el código 240101.
+    col_neto   = next((c for c in rep.columns
+                       if re.search(r'neto\s*(a\s*)?pagar', str(c).lower())
+                       and 'cuenta' not in str(c).lower()
+                       and 'codigo' not in _norm_hdr(c).lower()), None)
     col_per    = _buscar_col(rep, 'periodo', 'período')
     col_contr  = _buscar_col(rep, 'contrato')
     col_pago   = _buscar_col(rep, 'numero pago', 'número pago')
@@ -556,20 +560,40 @@ def consolidar(ruta_reporte, base_crp, base_bancaria, ruta_salida):
     bloques = _ubicar_bloques(rep)
     rets = _retenciones_fila(rep, bloques)
 
-    # Retenciones en la fuente con valor (en orden Q, T, W) -> HONOR_* y RET2_*,
-    # que la plantilla convierte en filas código 44.
-    rf = [(rets[f'{e} VALOR'], rets[f'{e} BASE'])
-          for k, e, _ in BLOQUES_RETENCION if k in CLAVES_RETEFUENTE]
-    honor_valor, honor_base, ret2_valor, ret2_base = [], [], [], []
+    # La estructura del Excel de salida NO cambia (20 columnas, igual al Módulo 01),
+    # porque ese mismo archivo es el que se carga en "Plantilla de pagos":
+    #   BASE RETEICA / Valor Reteica(%) / TOTAL DESCUENTOS -> fila de ReteICA (P31).
+    #     Ojo: en este esquema TOTAL DESCUENTOS es el IMPORTE DEL ICA (así lo deja
+    #     el Módulo 01 y así lo usa la plantilla). Si se pusiera la suma de todas
+    #     las retenciones, la retefuente se cobraría dos veces en BogData.
+    #   HONOR_BASE / HONOR_VALOR -> fila código 44 (retefuente).
+    # Lo que no cabe en esas columnas (2a retefuente, IVA, estampillas con valor)
+    # se devuelve en 'revisar' para que se cargue a mano.
+    rf_claves = [(k, e) for k, e, _ in BLOQUES_RETENCION if k in CLAVES_RETEFUENTE]
+    otras = [(k, e) for k, e, _ in BLOQUES_RETENCION
+             if k not in CLAVES_RETEFUENTE and k != 'RETEICA']
+    honor_valor, honor_base, revisar_txt = [], [], []
     for i in range(len(rep)):
-        con_valor = [(v.iloc[i], b.iloc[i]) for v, b in rf if v.iloc[i] > 0]
-        v1, b1 = con_valor[0] if len(con_valor) > 0 else (None, None)
-        v2, b2 = con_valor[1] if len(con_valor) > 1 else (None, None)
-        honor_valor.append(v1); honor_base.append(b1)
-        ret2_valor.append(v2); ret2_base.append(b2)
+        con_valor = [(e, rets[f'{e} VALOR'].iloc[i], rets[f'{e} BASE'].iloc[i])
+                     for k, e in rf_claves if rets[f'{e} VALOR'].iloc[i] > 0]
+        if con_valor:
+            honor_valor.append(con_valor[0][1]); honor_base.append(con_valor[0][2])
+        else:
+            honor_valor.append(None); honor_base.append(None)
+        extra = [f"{e} {v:,.0f} (base {b:,.0f})" for e, v, b in con_valor[1:]]
+        extra += [f"{e} {rets[f'{e} VALOR'].iloc[i]:,.0f} ({rets[f'{e} %'].iloc[i]} "
+                  f"base {rets[f'{e} BASE'].iloc[i]:,.0f})"
+                  for k, e in otras if rets[f'{e} VALOR'].iloc[i] > 0]
+        revisar_txt.append("; ".join(extra))
 
     ica_valor = rets['RETEICA VALOR']
     hay_ica = ica_valor > 0
+
+    # Control: la suma de todas las retenciones debe dar el Total Descuentos del reporte.
+    suma_creditos = rets[[c for c in rets.columns if c.endswith(' VALOR')]].sum(axis=1)
+    total_rep = _num(rep[col_desc]).fillna(0) if col_desc else suma_creditos
+    cuadre = ['' if abs(s_ - t_) < 1 else f'suma retenciones {s_:,.0f} vs total descuentos {t_:,.0f}'
+              for s_, t_ in zip(suma_creditos, total_rep)]
 
     out = pd.DataFrame({
         'Contrato':         rep[col_contr].apply(_fmt_contrato) if col_contr else "",
@@ -578,10 +602,10 @@ def consolidar(ruta_reporte, base_crp, base_bancaria, ruta_salida):
         'NIT_CC':           cedulas,
         'Valor Bruto':      _num(rep[col_bruto]) if col_bruto else 0,
         'BASE RETEICA':     rets['RETEICA BASE'],
-        # 'Valor Reteica' lleva el % (mismo criterio del Módulo 01: la plantilla
-        # lo convierte en el indicador de retención SAP).
+        # 'Valor Reteica' lleva el % (criterio del Módulo 01: la plantilla lo
+        # convierte en el indicador de retención SAP).
         'Valor Reteica':    rets['RETEICA %'].apply(_pct).where(hay_ica, ""),
-        'TOTAL DESCUENTOS': _num(rep[col_desc]) if col_desc else 0,
+        'TOTAL DESCUENTOS': ica_valor,
         'Neto a Pagar':     _num(rep[col_neto]) if col_neto else 0,
         # PERIODO en el Módulo 01 es el TOTAL de pagos del contrato ('PAGO 8 DE 12' -> 12).
         # El Reporte del Periodo no trae ese total, así que la columna queda vacía.
@@ -593,21 +617,9 @@ def consolidar(ruta_reporte, base_crp, base_bancaria, ruta_salida):
         'HONOR_BASE':       honor_base,
         'HONOR_VALOR':      honor_valor,
     })
-    out['RET2_BASE'] = ret2_base
-    out['RET2_VALOR'] = ret2_valor
-    # Importe real del ICA: la plantilla lo usa en lugar de TOTAL DESCUENTOS,
-    # que aquí es la SUMA de todas las retenciones.
-    out['RETEICA_VALOR'] = ica_valor
-    for c in rets.columns:
-        out[c] = rets[c].values
-
-    # Control: suma de créditos vs. TOTAL DESCUENTOS del reporte.
-    suma_creditos = rets[[c for c in rets.columns if c.endswith(' VALOR')]].sum(axis=1)
-    out['SUMA RETENCIONES'] = suma_creditos.values
-    out['No. RETENCIONES'] = (rets[[c for c in rets.columns if c.endswith(' VALOR')]] > 0).sum(axis=1).values
-    total_rep = pd.to_numeric(out['TOTAL DESCUENTOS'], errors='coerce').fillna(0)
-    out['CUADRE'] = ['OK' if abs(s - t) < 1 else f'DIFERENCIA {t - s:,.0f}'
-                     for s, t in zip(out['SUMA RETENCIONES'], total_rep)]
+    out['chk_revisar'] = revisar_txt
+    out['chk_cuadre'] = cuadre
+    out['chk_nret'] = (rets[[c for c in rets.columns if c.endswith(' VALOR')]] > 0).sum(axis=1).values
 
     # Cruce 1: CRP + SALDO CRP
     out = out.merge(
@@ -631,10 +643,8 @@ def consolidar(ruta_reporte, base_crp, base_bancaria, ruta_salida):
     for c in COL_ORDEN_FINAL:
         if c not in out.columns:
             out[c] = ""
-    # Las 20 columnas del Módulo 01 primero; luego el detalle de retenciones.
-    extras = ['RET2_BASE', 'RET2_VALOR', 'RETEICA_VALOR'] + list(rets.columns) + \
-             ['SUMA RETENCIONES', 'No. RETENCIONES', 'CUADRE']
-    out = out[COL_ORDEN_FINAL + extras]
+    control = out[['Contrato', 'Contratista', 'chk_revisar', 'chk_cuadre', 'chk_nret']].copy()
+    out = out[COL_ORDEN_FINAL]   # estructura fija de 20 columnas
 
     _escribir_excel(out, ruta_salida)
 
@@ -656,9 +666,12 @@ def consolidar(ruta_reporte, base_crp, base_bancaria, ruta_salida):
         "con_cuenta":     int((~sin_cuenta).sum()),
         "sin_cuenta":     int(sin_cuenta.sum()),
         "completos":      int((~sin_crp & ~sin_cuenta).sum()),
-        "multi_retencion": int((out['No. RETENCIONES'] >= 2).sum()),
-        "descuadres":     out.loc[out['CUADRE'] != 'OK',
-                                  ['Contrato', 'Contratista', 'CUADRE']].to_dict(orient='records'),
+        "multi_retencion": int((control['chk_nret'] >= 2).sum()),
+        # Retenciones que no tienen columna en la estructura (cargar a mano en la plantilla)
+        "revisar":        [{"Contrato": r.Contrato, "Contratista": r.Contratista, "detalle": r.chk_revisar}
+                           for r in control.itertuples() if r.chk_revisar],
+        "descuadres":     [{"Contrato": r.Contrato, "Contratista": r.Contratista, "detalle": r.chk_cuadre}
+                           for r in control.itertuples() if r.chk_cuadre],
         "pendientes":     pendientes.head(200).to_dict(orient='records'),
         "archivo_salida": ruta_salida,
     }
