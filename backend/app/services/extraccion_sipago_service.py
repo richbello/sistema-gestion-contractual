@@ -562,10 +562,11 @@ def consolidar(ruta_reporte, base_crp, base_bancaria, ruta_salida):
 
     # La estructura del Excel de salida NO cambia (20 columnas, igual al Módulo 01),
     # porque ese mismo archivo es el que se carga en "Plantilla de pagos":
-    #   BASE RETEICA / Valor Reteica(%) / TOTAL DESCUENTOS -> fila de ReteICA (P31).
-    #     Ojo: en este esquema TOTAL DESCUENTOS es el IMPORTE DEL ICA (así lo deja
-    #     el Módulo 01 y así lo usa la plantilla). Si se pusiera la suma de todas
-    #     las retenciones, la retefuente se cobraría dos veces en BogData.
+    #   BASE RETEICA / Valor Reteica  -> base y VALOR (importe) del ReteICA.
+    #   HONOR_BASE / HONOR_VALOR     -> base y valor de la retefuente.
+    #   TOTAL DESCUENTOS             -> SUMA de todas las retenciones.
+    #   Neto a Pagar                 -> Valor Bruto - TOTAL DESCUENTOS.
+    # La plantilla deduce el % del ICA como Valor Reteica / BASE RETEICA.
     #   HONOR_BASE / HONOR_VALOR -> fila código 44 (retefuente).
     # Lo que no cabe en esas columnas (2a retefuente, IVA, estampillas con valor)
     # se devuelve en 'revisar' para que se cargue a mano.
@@ -589,24 +590,30 @@ def consolidar(ruta_reporte, base_crp, base_bancaria, ruta_salida):
     ica_valor = rets['RETEICA VALOR']
     hay_ica = ica_valor > 0
 
+    bruto = _num(rep[col_bruto]).fillna(0) if col_bruto else pd.Series([0] * len(rep), index=rep.index)
+    neto_rep = _num(rep[col_neto]) if col_neto else None
     # Control: la suma de todas las retenciones debe dar el Total Descuentos del reporte.
     suma_creditos = rets[[c for c in rets.columns if c.endswith(' VALOR')]].sum(axis=1)
     total_rep = _num(rep[col_desc]).fillna(0) if col_desc else suma_creditos
-    cuadre = ['' if abs(s_ - t_) < 1 else f'suma retenciones {s_:,.0f} vs total descuentos {t_:,.0f}'
+    cuadre = ['' if abs(s_ - t_) < 1 else f'suma retenciones {s_:,.0f} vs total descuentos del reporte {t_:,.0f}'
               for s_, t_ in zip(suma_creditos, total_rep)]
+    if neto_rep is not None:
+        for i, (b_, s_, n_) in enumerate(zip(bruto, suma_creditos, neto_rep)):
+            if pd.notna(n_) and abs((b_ - s_) - n_) >= 1:
+                cuadre[i] = (cuadre[i] + '; ' if cuadre[i] else '') + \
+                    f'neto calculado {b_ - s_:,.0f} vs neto del reporte {n_:,.0f}'
+
 
     out = pd.DataFrame({
         'Contrato':         rep[col_contr].apply(_fmt_contrato) if col_contr else "",
         'Documento No.':    rep[col_pago].astype(str).str.strip() if col_pago else "",
         'Contratista':      rep[col_nombre].astype(str).str.strip(),
         'NIT_CC':           cedulas,
-        'Valor Bruto':      _num(rep[col_bruto]) if col_bruto else 0,
+        'Valor Bruto':      bruto,
         'BASE RETEICA':     rets['RETEICA BASE'],
-        # 'Valor Reteica' lleva el % (criterio del Módulo 01: la plantilla lo
-        # convierte en el indicador de retención SAP).
-        'Valor Reteica':    rets['RETEICA %'].apply(_pct).where(hay_ica, ""),
-        'TOTAL DESCUENTOS': ica_valor,
-        'Neto a Pagar':     _num(rep[col_neto]) if col_neto else 0,
+        'Valor Reteica':    ica_valor.where(hay_ica, 0),
+        'TOTAL DESCUENTOS': suma_creditos,
+        'Neto a Pagar':     bruto - suma_creditos,
         # PERIODO en el Módulo 01 es el TOTAL de pagos del contrato ('PAGO 8 DE 12' -> 12).
         # El Reporte del Periodo no trae ese total, así que la columna queda vacía.
         'PERIODO':          "",

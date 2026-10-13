@@ -134,10 +134,27 @@ def generar_plantilla_pagos(ruta_entrada_excel, ruta_salida_excel):
 
         pct_raw = str(_val(row, C_VAL_RETEICA) or "0").replace(',', '.')
         try:
-            pct_f   = float(pct_raw)
-            pct_str = f"{pct_f:.3f}".replace('.', ',') + "%"
+            pct_f = float(pct_raw)
         except ValueError:
+            pct_f = None
+
+        # Extracción SIPAGO deja en 'Valor Reteica' el IMPORTE del ICA (pesos) y en
+        # TOTAL DESCUENTOS la suma de todas las retenciones. El Módulo 01 deja ahí
+        # el % y el importe del ICA en TOTAL DESCUENTOS. Un % nunca pasa de 100.
+        importe_ica = total_desc
+        if pct_f is not None and pct_f > 100:
+            importe_ica = pct_f
+            pct_f = (importe_ica / base_reteica * 100) if base_reteica else None
+
+        if pct_f is None:
             pct_str = "0,766%"
+        else:
+            pct_str = f"{pct_f:.3f}".replace('.', ',') + "%"
+            if pct_str not in EQUIVALENCIAS:
+                # Redondeos del valor/base: se toma la tarifa más cercana (±0,005%).
+                cerca = min(EQUIVALENCIAS, key=lambda k: abs(float(k[:-1].replace(',', '.')) - pct_f))
+                if abs(float(cerca[:-1].replace(',', '.')) - pct_f) <= 0.005:
+                    pct_str = cerca
         indicador_ret = EQUIVALENCIAS.get(pct_str, "39")
 
         # Retenciones adicionales → filas código 44
@@ -220,7 +237,7 @@ def generar_plantilla_pagos(ruta_entrada_excel, ruta_salida_excel):
         ws.cell(fila_actual + 2, 40, indicador_ret)
         ws.cell(fila_actual + 2, 41, indicador_ret)
         ws.cell(fila_actual + 2, 42, base_reteica)
-        ws.cell(fila_actual + 2, 43, total_desc)
+        ws.cell(fila_actual + 2, 43, importe_ica)
 
         fila_actual += 3
 
