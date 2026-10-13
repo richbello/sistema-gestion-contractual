@@ -400,6 +400,30 @@ document.getElementById("form-sipago-procesar").addEventListener("submit", async
                     + "Todos los registros quedaron con CRP y cuenta bancaria.</div>";
     }
 
+    // Retenciones que no tienen columna en el Excel (cargar a mano en BogData)
+    // y filas cuya suma de retenciones no da el Total Descuentos del reporte.
+    const tablaAviso = (titulo, filas) => {
+      let h = '<div class="alerta alerta-aviso" style="display:block;margin:10px 0;">'
+            + `<strong>${titulo}</strong></div>`
+            + '<div class="tabla-wrap"><table class="tabla-datos"><thead><tr>'
+            + '<th>Contrato</th><th>Contratista</th><th>Detalle</th></tr></thead><tbody>';
+      filas.forEach(f => {
+        h += `<tr><td>${f["Contrato"] || ""}</td><td>${f["Contratista"] || ""}</td>`
+           + `<td>${f["detalle"] || ""}</td></tr>`;
+      });
+      return h + "</tbody></table></div>";
+    };
+    const rev = data.revisar || [];
+    const desc = data.descuadres || [];
+    if (rev.length) {
+      box.innerHTML += tablaAviso(
+        `${rev.length} registro(s) con retenciones adicionales que no caben en la plantilla (cargarlas a mano):`, rev);
+    }
+    if (desc.length) {
+      box.innerHTML += tablaAviso(
+        `${desc.length} registro(s) donde la suma de retenciones no coincide con Total Descuentos:`, desc);
+    }
+
     document.getElementById("link-descarga-sipago").href = API_BASE + data.descarga;
     document.getElementById("resultados-sipago").classList.add("visible");
   } catch (err) {
