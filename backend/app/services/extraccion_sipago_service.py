@@ -37,12 +37,34 @@ CRP_IDX_NOMBRE  = 32   # AG - Nombre BP Beneficiario
 CRP_IDX_SALDO   = 42   # AQ - Com.Sin.Aut.Giro      -> SALDO CRP
 CRP_IDX_INTERNO = 43   # AR - N° Interno CRP        -> CRP
 
-# ── Posiciones en el Reporte del Periodo (columnas sin encabezado) ───────────
-REP_IDX_HONOR_VALOR = 16   # retención adicional (valor)
-REP_IDX_HONOR_BASE  = 18   # retención adicional (base)
-REP_IDX_RETEICA_VAL = 28   # valor ReteICA
-REP_IDX_RETEICA_PCT = 29   # % ReteICA  -> va en 'Valor Reteica' (igual que Módulo 01)
-REP_IDX_RETEICA_BASE= 30   # base ReteICA
+# ── Bloques de retención del Reporte del Periodo ─────────────────────────────
+# Cada retención viene en un bloque de 3 columnas: CRÉDITO (valor) / % / BASE.
+# Se ubican por NOMBRE de encabezado (no por posición), así funciona aunque el
+# reporte traiga una columna de más o de menos. Regla:
+#   - CRÉDITO = 0  -> se deja en 0 (sin % ni base).
+#   - CRÉDITO > 0  -> se toman valor, % y base de ese mismo bloque.
+# (clave, etiqueta de salida, función que reconoce el encabezado normalizado)
+BLOQUES_RETENCION = [
+    ('RF_RENTAS',  'RETEFUENTE RENTAS',  lambda h: 'RENTAS DE TRABAJO' in h),
+    ('RF_HONOR',   'RETEFUENTE HONOR',   lambda h: 'HONORARIOS' in h and 'RENTAS' not in h
+                                                   and 'DEBITO' not in h and 'MENSUALIDAD' not in h),
+    ('RF_SERV',    'RETEFUENTE SERV',    lambda h: 'SERVICIOS' in h),
+    ('RETEIVA',    'RETEIVA',            lambda h: h.endswith(' IVA')),
+    ('RETEICA',    'RETEICA',            lambda h: h.endswith(' ICA')),
+    ('EST_UD',     'ESTAMPILLA UD',      lambda h: 'UNIVERSIDAD' in h),
+    ('EST_PROCUL', 'ESTAMPILLA PROCULT', lambda h: 'PROCULTURA' in h),
+    ('EST_ADULTO', 'ESTAMPILLA ADULTO M',lambda h: 'PROADULTO' in h),
+]
+# Retenciones en la fuente: van a la plantilla como filas código 44 (HONOR_*/RET2_*).
+CLAVES_RETEFUENTE = ('RF_RENTAS', 'RF_HONOR', 'RF_SERV')
+
+# Posiciones de respaldo (formato original) por si el reporte llega sin encabezados.
+REP_IDX_HONOR_VALOR = 16   # Q
+REP_IDX_HONOR_PCT   = 17   # R
+REP_IDX_HONOR_BASE  = 18   # S
+REP_IDX_RETEICA_VAL = 28   # AC
+REP_IDX_RETEICA_PCT = 29   # AD
+REP_IDX_RETEICA_BASE= 30   # AE
 
 TIPO_CTA = {'AHORROS': '02', 'CORRIENTE': '01'}
 RE_CUENTA = re.compile(r'^\s*(\S+)\s+(AHORROS|CORRIENTE)\s+(.+)$', re.IGNORECASE)
@@ -188,6 +210,78 @@ def _fmt_contrato(valor):
     if m:
         return f"{m.group(1).zfill(3)}-{m.group(2)}"
     return s
+
+
+def _norm_hdr(valor):
+    """Encabezado en mayúsculas, sin tildes ni saltos de línea ni espacios dobles."""
+    import unicodedata
+    s = unicodedata.normalize('NFKD', str(valor)).encode('ascii', 'ignore').decode()
+    return re.sub(r'\s+', ' ', s).strip().upper()
+
+
+def _ubicar_bloques(df):
+    """{clave: {'valor': col, 'pct': col, 'base': col}} buscando por encabezado.
+    Si no encuentra RETEICA ni RETEFUENTE RENTAS por nombre, usa las posiciones
+    del formato original."""
+    hdrs = [(c, _norm_hdr(c)) for c in df.columns]
+    bloques = {}
+    for clave, _, reconoce in BLOQUES_RETENCION:
+        b = {}
+        for col, h in hdrs:
+            if not reconoce(h):
+                continue
+            if h.startswith('CREDITO') and 'valor' not in b:
+                b['valor'] = col
+            elif h.startswith('%') and 'pct' not in b:
+                b['pct'] = col
+            elif h.startswith('BASE') and 'base' not in b:
+                b['base'] = col
+        if 'valor' in b:
+            bloques[clave] = b
+
+    def _por_idx(i):
+        return df.columns[i] if i < len(df.columns) else None
+
+    if 'RF_RENTAS' not in bloques and _por_idx(REP_IDX_HONOR_VALOR) is not None:
+        bloques['RF_RENTAS'] = {'valor': _por_idx(REP_IDX_HONOR_VALOR),
+                                'pct': _por_idx(REP_IDX_HONOR_PCT),
+                                'base': _por_idx(REP_IDX_HONOR_BASE)}
+    if 'RETEICA' not in bloques and _por_idx(REP_IDX_RETEICA_VAL) is not None:
+        bloques['RETEICA'] = {'valor': _por_idx(REP_IDX_RETEICA_VAL),
+                              'pct': _por_idx(REP_IDX_RETEICA_PCT),
+                              'base': _por_idx(REP_IDX_RETEICA_BASE)}
+    return bloques
+
+
+def _txt_pct(valor):
+    """Porcentaje tal como viene ('0,766%'); vacío si la celda está vacía."""
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+        return ""
+    s = str(valor).strip()
+    return "" if s.lower() == 'nan' else s
+
+
+def _retenciones_fila(rep, bloques):
+    """DataFrame con VALOR/%/BASE de cada bloque aplicando la regla:
+    CRÉDITO en 0 se deja en 0; CRÉDITO con valor arrastra su % y su base."""
+    out = {}
+    for clave, etiqueta, _ in BLOQUES_RETENCION:
+        b = bloques.get(clave)
+        if b is None:
+            valor = pd.Series([0.0] * len(rep), index=rep.index)
+            pct = pd.Series([""] * len(rep), index=rep.index)
+            base = pd.Series([None] * len(rep), index=rep.index, dtype=float)
+        else:
+            valor = _num(rep[b['valor']]).fillna(0)
+            pct = rep[b['pct']].apply(_txt_pct) if b.get('pct') is not None \
+                else pd.Series([""] * len(rep), index=rep.index)
+            base = _num(rep[b['base']]) if b.get('base') is not None \
+                else pd.Series([None] * len(rep), index=rep.index, dtype=float)
+        hay = valor > 0
+        out[f'{etiqueta} VALOR'] = valor
+        out[f'{etiqueta} %'] = pct.where(hay, "")
+        out[f'{etiqueta} BASE'] = base.where(hay)
+    return pd.DataFrame(out, index=rep.index)
 
 
 def _fechas_periodo(texto):
@@ -458,10 +552,24 @@ def consolidar(ruta_reporte, base_crp, base_bancaria, ruta_salida):
     periodo_txt = rep[col_per].astype(str) if col_per else pd.Series([""] * len(rep))
     fechas = periodo_txt.apply(_fechas_periodo)
 
-    honor_base  = _num(_col(rep, REP_IDX_HONOR_BASE))
-    honor_valor = _num(_col(rep, REP_IDX_HONOR_VALOR))
-    # Solo se reporta honorario cuando efectivamente hay un valor retenido.
-    hay_honor = honor_valor.fillna(0) > 0
+    # Retenciones: cada bloque CRÉDITO / % / BASE ubicado por encabezado.
+    bloques = _ubicar_bloques(rep)
+    rets = _retenciones_fila(rep, bloques)
+
+    # Retenciones en la fuente con valor (en orden Q, T, W) -> HONOR_* y RET2_*,
+    # que la plantilla convierte en filas código 44.
+    rf = [(rets[f'{e} VALOR'], rets[f'{e} BASE'])
+          for k, e, _ in BLOQUES_RETENCION if k in CLAVES_RETEFUENTE]
+    honor_valor, honor_base, ret2_valor, ret2_base = [], [], [], []
+    for i in range(len(rep)):
+        con_valor = [(v.iloc[i], b.iloc[i]) for v, b in rf if v.iloc[i] > 0]
+        v1, b1 = con_valor[0] if len(con_valor) > 0 else (None, None)
+        v2, b2 = con_valor[1] if len(con_valor) > 1 else (None, None)
+        honor_valor.append(v1); honor_base.append(b1)
+        ret2_valor.append(v2); ret2_base.append(b2)
+
+    ica_valor = rets['RETEICA VALOR']
+    hay_ica = ica_valor > 0
 
     out = pd.DataFrame({
         'Contrato':         rep[col_contr].apply(_fmt_contrato) if col_contr else "",
@@ -469,8 +577,10 @@ def consolidar(ruta_reporte, base_crp, base_bancaria, ruta_salida):
         'Contratista':      rep[col_nombre].astype(str).str.strip(),
         'NIT_CC':           cedulas,
         'Valor Bruto':      _num(rep[col_bruto]) if col_bruto else 0,
-        'BASE RETEICA':     _num(_col(rep, REP_IDX_RETEICA_BASE)),
-        'Valor Reteica':    _col(rep, REP_IDX_RETEICA_PCT).apply(_pct),
+        'BASE RETEICA':     rets['RETEICA BASE'],
+        # 'Valor Reteica' lleva el % (mismo criterio del Módulo 01: la plantilla
+        # lo convierte en el indicador de retención SAP).
+        'Valor Reteica':    rets['RETEICA %'].apply(_pct).where(hay_ica, ""),
         'TOTAL DESCUENTOS': _num(rep[col_desc]) if col_desc else 0,
         'Neto a Pagar':     _num(rep[col_neto]) if col_neto else 0,
         # PERIODO en el Módulo 01 es el TOTAL de pagos del contrato ('PAGO 8 DE 12' -> 12).
@@ -480,9 +590,24 @@ def consolidar(ruta_reporte, base_crp, base_bancaria, ruta_salida):
         'AL':               fechas.apply(lambda t: t[1]),
         'PAGO No.':         (rep[col_pago].astype(str).str.extract(RE_PAGO)[0]
                              if col_pago else ""),
-        'HONOR_BASE':       honor_base.where(hay_honor),
-        'HONOR_VALOR':      honor_valor.where(hay_honor),
+        'HONOR_BASE':       honor_base,
+        'HONOR_VALOR':      honor_valor,
     })
+    out['RET2_BASE'] = ret2_base
+    out['RET2_VALOR'] = ret2_valor
+    # Importe real del ICA: la plantilla lo usa en lugar de TOTAL DESCUENTOS,
+    # que aquí es la SUMA de todas las retenciones.
+    out['RETEICA_VALOR'] = ica_valor
+    for c in rets.columns:
+        out[c] = rets[c].values
+
+    # Control: suma de créditos vs. TOTAL DESCUENTOS del reporte.
+    suma_creditos = rets[[c for c in rets.columns if c.endswith(' VALOR')]].sum(axis=1)
+    out['SUMA RETENCIONES'] = suma_creditos.values
+    out['No. RETENCIONES'] = (rets[[c for c in rets.columns if c.endswith(' VALOR')]] > 0).sum(axis=1).values
+    total_rep = pd.to_numeric(out['TOTAL DESCUENTOS'], errors='coerce').fillna(0)
+    out['CUADRE'] = ['OK' if abs(s - t) < 1 else f'DIFERENCIA {t - s:,.0f}'
+                     for s, t in zip(out['SUMA RETENCIONES'], total_rep)]
 
     # Cruce 1: CRP + SALDO CRP
     out = out.merge(
@@ -506,7 +631,10 @@ def consolidar(ruta_reporte, base_crp, base_bancaria, ruta_salida):
     for c in COL_ORDEN_FINAL:
         if c not in out.columns:
             out[c] = ""
-    out = out[COL_ORDEN_FINAL]
+    # Las 20 columnas del Módulo 01 primero; luego el detalle de retenciones.
+    extras = ['RET2_BASE', 'RET2_VALOR', 'RETEICA_VALOR'] + list(rets.columns) + \
+             ['SUMA RETENCIONES', 'No. RETENCIONES', 'CUADRE']
+    out = out[COL_ORDEN_FINAL + extras]
 
     _escribir_excel(out, ruta_salida)
 
@@ -528,6 +656,9 @@ def consolidar(ruta_reporte, base_crp, base_bancaria, ruta_salida):
         "con_cuenta":     int((~sin_cuenta).sum()),
         "sin_cuenta":     int(sin_cuenta.sum()),
         "completos":      int((~sin_crp & ~sin_cuenta).sum()),
+        "multi_retencion": int((out['No. RETENCIONES'] >= 2).sum()),
+        "descuadres":     out.loc[out['CUADRE'] != 'OK',
+                                  ['Contrato', 'Contratista', 'CUADRE']].to_dict(orient='records'),
         "pendientes":     pendientes.head(200).to_dict(orient='records'),
         "archivo_salida": ruta_salida,
     }

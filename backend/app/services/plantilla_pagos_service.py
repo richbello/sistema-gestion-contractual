@@ -131,6 +131,12 @@ def generar_plantilla_pagos(ruta_entrada_excel, ruta_salida_excel):
         valor_bruto  = _float(_val(row, C_VALOR_BRUTO))
         base_reteica = _float(_val(row, C_BASE_RETEICA))
         total_desc   = _float(_val(row, C_TOTAL_DESC))
+        # La salida de Extracción SIPAGO trae el importe real del ICA aparte:
+        # allí TOTAL DESCUENTOS es la suma de TODAS las retenciones y usarla
+        # aquí duplicaría la retefuente que ya va en las filas código 44.
+        # (La salida del Módulo 01 no trae esta columna y sigue igual.)
+        if 'RETEICA_VALOR' in dc:
+            total_desc = _float(_val(row, 'RETEICA_VALOR'))
 
         pct_raw = str(_val(row, C_VAL_RETEICA) or "0").replace(',', '.')
         try:
