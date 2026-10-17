@@ -22,6 +22,7 @@ function descargarSaneada(b64) {
 const MODULOS = {
   extraccion:    { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Extracción de causaciones" },
   sipago: { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Extracción SIPAGO" },
+  "cruce-crp":   { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Cruce Extracción ↔ CRP" },
 
   plantilla:     { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Plantilla de pagos" },
   pac:           { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Cuadre PAC" },
@@ -144,6 +145,8 @@ function configurarDropzoneMultiple(dropId, inputId, listaId) {
 configurarDropzoneUnico("drop-basegen", "input-basegen", "lista-basegen");
 configurarDropzoneMultiple("drop-pdfs", "input-pdfs", "lista-pdfs");
 configurarDropzoneUnico("drop-extraccion-in", "input-extraccion-in", "lista-extraccion-in");
+configurarDropzoneUnico("drop-cruce-ext", "input-cruce-ext", "lista-cruce-ext");
+configurarDropzoneUnico("drop-cruce-crp", "input-cruce-crp", "lista-cruce-crp");
 configurarDropzoneUnico("drop-plantilla-pac", "input-plantilla-pac", "lista-plantilla-pac");
 configurarDropzoneUnico("drop-reporte-pac", "input-reporte-pac", "lista-reporte-pac");
 configurarDropzoneUnico("drop-plantilla-ec", "input-plantilla-ec", "lista-plantilla-ec");
@@ -311,6 +314,61 @@ document.getElementById("form-extraccion").addEventListener("submit", async (e) 
     mostrarEstado("estado-extraccion", false);
   }
 });
+/* ---------------------------- Cruce Extracción ↔ CRP ---------------------------- */
+document.getElementById("form-cruce-crp").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  mostrarAlerta("alerta-cruce-crp", "");
+  document.getElementById("resultados-cruce-crp").classList.remove("visible");
+  const ext = document.getElementById("input-cruce-ext").files[0];
+  const crp = document.getElementById("input-cruce-crp").files[0];
+  if (!ext || !crp) {
+    mostrarAlerta("alerta-cruce-crp", "Debes adjuntar el archivo de extracción y el Reporte CRP.");
+    return;
+  }
+  const fd = new FormData();
+  fd.append("extraccion", ext);
+  fd.append("reporte_crp", crp);
+  const btn = document.getElementById("btn-cruce-crp");
+  btn.disabled = true;
+  mostrarEstado("estado-cruce-crp", true);
+  try {
+    const resp = await fetch(`${API_BASE}/api/cruce-crp/procesar`, { method: "POST", body: fd });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      mostrarAlerta("alerta-cruce-crp", data.mensaje || "No se pudo realizar el cruce.");
+      return;
+    }
+    const cont = document.getElementById("metricas-cruce-crp");
+    cont.innerHTML = "";
+    cont.appendChild(crearMetrica(data.filas_entrada, "Filas de la extracción"));
+    cont.appendChild(crearMetrica(data.filas_salida, "Filas resultantes", "verde"));
+    cont.appendChild(crearMetrica(data.filas_divididas, "Pagos divididos en varios CRP", data.filas_divididas ? "ocre" : ""));
+    cont.appendChild(crearMetrica(data.sin_cruce, "Contratos sin CRP", data.sin_cruce ? "rojo" : ""));
+    cont.appendChild(crearMetrica(data.saldo_insuficiente, "Con saldo insuficiente", data.saldo_insuficiente ? "rojo" : ""));
+    const idAviso = "aviso-cruce-crp";
+    let aviso = document.getElementById(idAviso);
+    if (aviso) aviso.remove();
+    const avisos = [];
+    if (data.sin_cruce) avisos.push(`${data.sin_cruce} fila(s) quedaron marcadas "SIN CRUCE" (el contrato no está en el Reporte CRP).`);
+    if (data.saldo_insuficiente) avisos.push(`${data.saldo_insuficiente} fila(s) marcadas "SALDO INSUFICIENTE": los CRP del contrato no alcanzan para el pago.`);
+    if (data.alertas && data.alertas.length) avisos.push(...data.alertas);
+    if (avisos.length) {
+      aviso = document.createElement("div");
+      aviso.id = idAviso;
+      aviso.className = "alerta alerta-aviso";
+      aviso.style.display = "block";
+      aviso.innerHTML = `<strong>Revisar:</strong> ${avisos.join(" ")} Las filas aparecen resaltadas en rojo en el Excel.`;
+      cont.parentNode.insertBefore(aviso, cont.nextSibling);
+    }
+    document.getElementById("link-descarga-cruce-crp").href = API_BASE + data.descarga;
+    document.getElementById("resultados-cruce-crp").classList.add("visible");
+  } catch (err) {
+    mostrarAlerta("alerta-cruce-crp", "Error de conexión con el servidor. Verifica que el backend esté en ejecución.");
+  } finally {
+    btn.disabled = false;
+    mostrarEstado("estado-cruce-crp", false);
+  }
+});
 /* ---------------------------- Módulo 02: Plantilla de pagos ---------------------------- */
 document.getElementById("form-plantilla").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -339,6 +397,9 @@ document.getElementById("form-plantilla").addEventListener("submit", async (e) =
     cont.appendChild(crearMetrica(data.filas_con_codigo_44, "Con honorarios (cód. 44)", "ocre"));
     cont.appendChild(crearMetrica(data.tiene_columnas_honorarios ? "Sí" : "No", "Columnas de honorarios detectadas"));
     cont.appendChild(crearMetrica(data.cuentas_desde_registro ?? "—", "Cuentas verificadas contra el registro"));
+    if (data.bloques_divididos_crp) {
+      cont.appendChild(crearMetrica(data.bloques_divididos_crp, "Bloques por CRP adicional (sin retenciones)", "ocre"));
+    }
     const sinCruzar = data.cuentas_sin_cruzar || [];
     cont.appendChild(crearMetrica(sinCruzar.length, "Cuentas por revisar", sinCruzar.length ? "ocre" : ""));
     // Aviso detallado cuando hay cedulas que no cruzaron con el registro

@@ -46,6 +46,7 @@
         <span class="nav-subgrupo-titulo">Personas Naturales</span>
         <button class="nav-item nav-sub" data-vista="extraccion"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6M9 9h1"/></svg> Extracción de causaciones</button>
         <button class="nav-item nav-sub" data-vista="sipago"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7h18M3 12h18M3 17h10"/><circle cx="18" cy="17" r="3"/></svg> Extracción SIPAGO</button>
+        <button class="nav-item nav-sub" data-vista="cruce-crp"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 4v16M17 4v16"/><path d="M3 8h8M13 16h8"/><path d="M9 6l2 2-2 2M15 14l-2 2 2 2"/></svg> Cruce CRP</button>
         <button class="nav-item nav-sub" data-vista="plantilla"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9h18M9 9v11"/></svg> Plantilla de pagos</button>
         <button class="nav-item nav-sub" data-vista="pac"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg> Cuadre PAC</button>
         <button class="nav-item nav-sub" data-vista="validacion"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/></svg> Validación de plantilla</button>
@@ -154,6 +155,77 @@
     </section>
 
 
+    <!-- ===================== VISTA: CRUCE EXTRACCIÓN ↔ CRP ===================== -->
+    <section class="vista" id="vista-cruce-crp" hidden>
+      <form class="panel" id="form-cruce-crp">
+        <div class="panel-acento-superior"></div>
+        <div class="panel-cuerpo">
+          <div class="grid-form">
+            <div class="campo">
+              <label>Archivo de extracción</label>
+              <div class="ayuda">Extracción_ENTREGA.xlsx (Extracción de causaciones o SIPAGO). Se cruza por la columna Contrato.</div>
+              <div class="dropzone" id="drop-cruce-ext">
+                <input type="file" id="input-cruce-ext" accept=".xlsx,.xls" required>
+                <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+                <div class="dropzone-texto"><strong>Arrastra el archivo</strong> o haz clic para seleccionarlo</div>
+                <div class="dropzone-detalle">.xlsx · un solo archivo</div>
+              </div>
+              <div class="lista-archivos" id="lista-cruce-ext"></div>
+            </div>
+
+            <div class="campo">
+              <label>Reporte CRP</label>
+              <div class="ayuda">Reporte con No. Compromiso, N° Interno CRP, Fecha Registro y Com.Sin.Aut.Giro (saldo disponible).</div>
+              <div class="dropzone" id="drop-cruce-crp">
+                <input type="file" id="input-cruce-crp" accept=".xlsx,.xls" required>
+                <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+                <div class="dropzone-texto"><strong>Arrastra el archivo</strong> o haz clic para seleccionarlo</div>
+                <div class="dropzone-detalle">.xlsx · un solo archivo</div>
+              </div>
+              <div class="lista-archivos" id="lista-cruce-crp"></div>
+            </div>
+          </div>
+
+          <div class="ayuda" style="margin-top:12px;font-size:12.5px;color:#6b7280;">
+            Se asigna el N° Interno CRP más antiguo con saldo. Si el saldo no alcanza para el Valor Bruto, la fila se divide:
+            la primera con el saldo del CRP y una fila duplicada debajo con el siguiente CRP por el resto (sin retenciones ni datos bancarios).
+          </div>
+
+          <div class="barra-acciones">
+            <button type="submit" class="btn btn-primario" id="btn-cruce-crp">
+              <svg class="icono-btn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              Cruzar con CRP
+            </button>
+            <div class="estado-proceso" id="estado-cruce-crp"><span class="spinner"></span> Asignando CRP…</div>
+          </div>
+
+          <div class="alerta alerta-error" id="alerta-cruce-crp"></div>
+
+          <div class="resultados" id="resultados-cruce-crp">
+            <div class="resultados-cabecera">
+              <svg class="sello-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>
+              <h3>Cruce completado</h3>
+            </div>
+            <div class="metricas-grid" id="metricas-cruce-crp"></div>
+            <div class="descarga-card">
+              <div class="descarga-info">
+                <svg class="descarga-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+                <div>
+                  <div class="descarga-nombre">Extraccion_Entrega_con_CRP.xlsx</div>
+                  <div class="descarga-detalle">Con columna N° Interno CRP y hoja Cruce_CRP · insumo de la Plantilla de pagos</div>
+                </div>
+              </div>
+              <a class="btn btn-dorado" id="link-descarga-cruce-crp">
+                <svg class="icono-btn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+                Descargar Excel
+              </a>
+            </div>
+          </div>
+        </div>
+      </form>
+    </section>
+
+
     <!-- ===================== VISTA 2: PLANTILLA DE PAGOS ===================== -->
     <section class="vista" id="vista-plantilla" hidden>
       
@@ -164,7 +236,7 @@
           <div class="grid-form una-col">
             <div class="campo">
               <label>Archivo de extracción</label>
-              <div class="ayuda">Excel generado en el Módulo 01 (Extracción_ENTREGA.xlsx). Si incluye columnas HONOR_BASE y HONOR_VALOR, se generará automáticamente la fila de honorarios (código 44).</div>
+              <div class="ayuda">Excel generado en el Módulo 01 (Extracción_ENTREGA.xlsx). Si incluye columnas HONOR_BASE y HONOR_VALOR, se generará automáticamente la fila de honorarios (código 44). Si viene del Cruce CRP, se usa el N° Interno CRP asignado y los pagos divididos salen sin retenciones en el bloque adicional.</div>
               <div class="dropzone" id="drop-extraccion-in">
                 <input type="file" id="input-extraccion-in" accept=".xlsx,.xls" required>
                 <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>

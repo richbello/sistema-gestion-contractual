@@ -97,6 +97,8 @@ def generar_plantilla_pagos(ruta_entrada_excel, ruta_salida_excel):
     C_TOTAL_DESC   = _col(dc, 'TOTAL', 'DESCUENTO')
     C_VAL_RETEICA  = _col(dc, 'VALOR', 'RETEICA')
     C_CRP          = _col(dc, 'CRP', exact=True) or _col(dc, 'CRP')
+    # Columna que agrega el Cruce Extracción↔CRP: si existe, manda sobre 'CRP'
+    C_CRP_ASIG     = _col(dc, 'INTERNO', 'CRP')
     C_CONTRATO     = _col(dc, 'CONTRATO')
     C_BCO          = _col(dc, 'CÓDIGO', 'BCO') or _col(dc, 'COD', 'BCO')
     C_CUENTA       = _col(dc, 'NO', 'CUENTA') or _col(dc, 'CUENTA')
@@ -117,6 +119,13 @@ def generar_plantilla_pagos(ruta_entrada_excel, ruta_salida_excel):
     desde_registro = 0   # cuentas tomadas del registro depurado
     sin_cruzar     = []  # (cedula, nombre) que NO estaban en el registro
     hoy         = datetime.now().strftime("%Y%m%d")
+
+    # Pagos divididos en varios CRP (Cruce Extracción↔CRP): la fila duplicada
+    # (mismo contrato que la anterior y otro CRP) lleva los datos bancarios del
+    # primer bloque del contrato y NO lleva retenciones (se aplican una sola vez).
+    prev_asig, prev_rp = None, None
+    banco_primero      = None
+    bloques_divididos  = 0
 
     for idx, row in df.iterrows():
         pago_num = idx + 1
@@ -172,11 +181,19 @@ def generar_plantilla_pagos(ruta_entrada_excel, ruta_salida_excel):
 
         rp_doc = re.sub(r'[^\d]', '',
                         str(_val(row, C_CRP) or '').split('.')[0].strip())
+        rp_asig = re.sub(r'[^\d]', '',
+                         str(_val(row, C_CRP_ASIG) or '').split('.')[0].strip())
+        if rp_asig:   # 'SIN CRUCE' / 'SALDO INSUFICIENTE' no traen dígitos
+            rp_doc = rp_asig
 
         contrato_raw = str(_val(row, C_CONTRATO) or "")
         nums         = re.findall(r'\d+', contrato_raw)
         asignacion   = (f"{nums[0]}-{nums[1]}" if len(nums) >= 2
                         else (nums[0] if nums else f"{pago_num:03d}-2026"))
+
+        es_duplicado = (asignacion == prev_asig and rp_doc != prev_rp
+                        and banco_primero is not None)
+        prev_asig, prev_rp = asignacion, rp_doc
 
         bco_raw  = re.sub(r'[^\d]', '', str(_val(row, C_BCO) or '051')).zfill(3)
         cta_raw  = re.sub(r'[^\d]', '',
@@ -187,14 +204,20 @@ def generar_plantilla_pagos(ruta_entrada_excel, ruta_salida_excel):
         # --- Cruce con el registro depurado de cuentas bancarias ---
         # Si la cedula esta en el registro, sus datos mandan (fuente unica
         # y depurada). Si no esta, se respeta lo de la extraccion.
-        cuenta_reg = buscar_cuenta(no_ident)
-        if cuenta_reg:
-            bco_raw  = re.sub(r'[^\d]', '', cuenta_reg['codigo_banco']).zfill(3)
-            cta_raw  = re.sub(r'[^\d]', '', cuenta_reg['numero_cuenta'])
-            tipo_cta = re.sub(r'[^\d]', '', cuenta_reg['tipo_cuenta']).zfill(2)
-            desde_registro += 1
+        if es_duplicado:
+            bco_raw, cta_raw, tipo_cta = banco_primero
+            rets_adicionales = []
+            bloques_divididos += 1
         else:
-            sin_cruzar.append((no_ident, contratista))
+            cuenta_reg = buscar_cuenta(no_ident)
+            if cuenta_reg:
+                bco_raw  = re.sub(r'[^\d]', '', cuenta_reg['codigo_banco']).zfill(3)
+                cta_raw  = re.sub(r'[^\d]', '', cuenta_reg['numero_cuenta'])
+                tipo_cta = re.sub(r'[^\d]', '', cuenta_reg['tipo_cuenta']).zfill(2)
+                desde_registro += 1
+            else:
+                sin_cruzar.append((no_ident, contratista))
+            banco_primero = (bco_raw, cta_raw, tipo_cta)
 
         del_v   = _fmt_fecha(str(_val(row, C_DEL) or ''))
         al_v    = _fmt_fecha(str(_val(row, C_AL)  or ''))
@@ -234,10 +257,11 @@ def generar_plantilla_pagos(ruta_entrada_excel, ruta_salida_excel):
         for col, val in zip([37, 38, 39], [bco_raw, cta_raw, tipo_cta]):
             c = ws.cell(fila_actual + 2, col, val)
             c.number_format = '@'
-        ws.cell(fila_actual + 2, 40, indicador_ret)
-        ws.cell(fila_actual + 2, 41, indicador_ret)
-        ws.cell(fila_actual + 2, 42, base_reteica)
-        ws.cell(fila_actual + 2, 43, importe_ica)
+        if not es_duplicado:
+            ws.cell(fila_actual + 2, 40, indicador_ret)
+            ws.cell(fila_actual + 2, 41, indicador_ret)
+            ws.cell(fila_actual + 2, 42, base_reteica)
+            ws.cell(fila_actual + 2, 43, importe_ica)
 
         fila_actual += 3
 
@@ -264,5 +288,6 @@ def generar_plantilla_pagos(ruta_entrada_excel, ruta_salida_excel):
         "tiene_columnas_honorarios": tiene_honor,
         "archivo_salida"        : ruta_salida_excel,
         "cuentas_desde_registro": desde_registro,
+        "bloques_divididos_crp" : bloques_divididos,
         "cuentas_sin_cruzar"    : [{"cedula": c, "nombre": n} for c, n in sin_cruzar],
     }
