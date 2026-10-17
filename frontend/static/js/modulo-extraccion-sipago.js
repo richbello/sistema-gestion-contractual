@@ -380,6 +380,22 @@ document.getElementById("form-sipago-procesar").addEventListener("submit", async
     cont.appendChild(crearMetrica(data.sin_crp, "Sin CRP", data.sin_crp ? "ocre" : ""));
     cont.appendChild(crearMetrica(data.sin_cuenta, "Sin cuenta bancaria", data.sin_cuenta ? "ocre" : ""));
 
+    // Cruce por contrato con el Reporte CRP completo (división de pagos)
+    const cc = data.cruce_crp;
+    const avisosCrp = [];
+    if (cc && !cc.error) {
+      cont.appendChild(crearMetrica(cc.filas_divididas || 0, "Pagos divididos en varios CRP",
+                                    cc.filas_divididas ? "ocre" : ""));
+      if (cc.saldo_insuficiente) avisosCrp.push(`${cc.saldo_insuficiente} pago(s) sin saldo suficiente en sus CRP: la parte faltante quedó en una fila marcada "SALDO INSUFICIENTE".`);
+      if (cc.sin_cruce) avisosCrp.push(`${cc.sin_cruce} contrato(s) no aparecen en el Reporte CRP por No. Compromiso: se dejó el CRP encontrado por cédula.`);
+      (cc.alertas || []).forEach(a => avisosCrp.push(a));
+    } else if (cc && cc.error) {
+      avisosCrp.push(cc.error);
+    } else {
+      avisosCrp.push("Para dividir pagos cuando el saldo del CRP no alcanza, vuelve a cargar el Reporte CRP en Bases de referencia.");
+    }
+    if (avisosCrp.length) mostrarAlerta("alerta-sipago", avisosCrp.join(" "));
+
     // Detalle de los registros que quedaron incompletos
     const box = document.getElementById("detalle-sipago-pendientes");
     const pend = data.pendientes || [];

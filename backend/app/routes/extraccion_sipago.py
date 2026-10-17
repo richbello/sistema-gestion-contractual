@@ -10,6 +10,7 @@ from ..services.extraccion_sipago_service import (
     info_base,
     ejecutar_consolidado,
 )
+from ..services.cruce_extraccion_crp import cruzar_extraccion_con_crp
 from .utils import guardar_archivo, nombre_salida
 
 extraccion_sipago_bp = Blueprint("extraccion_sipago", __name__)
@@ -18,6 +19,9 @@ extraccion_sipago_bp = Blueprint("extraccion_sipago", __name__)
 # usuario sube archivos nuevos desde la pestaña "Bases de referencia".
 ARCHIVO_BASE_CRP   = "sipago_base_crp.pkl"
 ARCHIVO_BASE_BANCO = "sipago_base_bancaria.pkl"
+# Reporte CRP completo (todos los CRP de cada contrato) para dividir pagos
+# cuando el saldo de un CRP no alcanza. La base .pkl solo guarda uno por cédula.
+ARCHIVO_REPORTE_CRP = "sipago_reporte_crp.xlsx"
 
 
 def _ruta_base(nombre):
@@ -54,7 +58,7 @@ def cargar_base_crp():
 
         guardar_base(base, _ruta_base(ARCHIVO_BASE_CRP))
         try:
-            os.remove(ruta)
+            os.replace(ruta, _ruta_base(ARCHIVO_REPORTE_CRP))
         except OSError:
             pass
 
@@ -174,6 +178,20 @@ def procesar():
 
         if not resultado.get("ok"):
             return jsonify(resultado), 422
+
+        # Cruce por Contrato con el Reporte CRP completo: asigna el CRP más
+        # antiguo con saldo y divide la fila cuando el saldo no alcanza.
+        ruta_crp = _ruta_base(ARCHIVO_REPORTE_CRP)
+        if os.path.isfile(ruta_crp):
+            try:
+                resultado["cruce_crp"] = cruzar_extraccion_con_crp(
+                    ruta_salida, ruta_crp, ruta_salida,
+                    conservar_sin_cruce=True, actualizar_saldo=True)
+            except Exception as e:
+                current_app.logger.error(traceback.format_exc())
+                resultado["cruce_crp"] = {"error": f"No se pudo cruzar por contrato: {e}"}
+        else:
+            resultado["cruce_crp"] = None
 
         resultado["descarga"] = (
             f"/api/extraccion-sipago/descargar/{os.path.basename(ruta_salida)}"

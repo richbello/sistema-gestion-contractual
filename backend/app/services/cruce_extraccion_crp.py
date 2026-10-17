@@ -293,7 +293,12 @@ def asignar_crp(valor: Decimal, disponibles: list[CRPDisponible]):
 # PROCESO PRINCIPAL
 # ---------------------------------------------------------------------------
 
-def cruzar_extraccion_con_crp(ruta_extraccion: str, ruta_crp: str, ruta_salida: str) -> dict:
+def cruzar_extraccion_con_crp(ruta_extraccion: str, ruta_crp: str, ruta_salida: str,
+                              conservar_sin_cruce: bool = False,
+                              actualizar_saldo: bool = False) -> dict:
+    """conservar_sin_cruce: si el contrato no aparece en el Reporte CRP, la fila se deja
+    con el CRP que ya traía (SIPAGO lo trae por cédula) en vez de marcar SIN CRUCE.
+    actualizar_saldo: la columna SALDO CRP pasa a ser el saldo del CRP asignado."""
     base = cargar_crp(ruta_crp)
 
     wb_in = openpyxl.load_workbook(ruta_extraccion)
@@ -318,6 +323,8 @@ def cruzar_extraccion_con_crp(ruta_extraccion: str, ruta_crp: str, ruta_salida: 
         except ValueError:
             pass
     # Columna donde va el N° Interno CRP: la propia 'CRP' (o la ya renombrada)
+    col_saldo = next((i for i, hh in enumerate(headers)
+                      if _norm_header(hh) == _norm_header("SALDO CRP")), None)
     col_crp = next((i for i, hh in enumerate(headers)
                     if _norm_header(hh) in (_norm_header(EXT_CRP), _norm_header(EXT_COL_NUEVA))), None)
 
@@ -368,6 +375,12 @@ def cruzar_extraccion_con_crp(ruta_extraccion: str, ruta_crp: str, ruta_salida: 
 
         # Construir la lista de (interno, monto) para las filas de salida
         partes = [(i, m) for i, m, _ in asign]
+        crp_previo = valores[col_crp] if col_crp is not None else None
+        if not disponibles and conservar_sin_cruce and crp_previo not in (None, ""):
+            partes = [(str(crp_previo), bruto)]
+            faltante = Decimal(0)
+            resumen["sin_cruce"] += 1
+            resumen.setdefault("conservados", []).append(str(valores[col[EXT_CONTRATO]]))
         if faltante > 0:
             partes.append((MARCA_SIN_CRUCE if not disponibles else MARCA_SIN_SALDO, faltante))
             resumen["sin_cruce" if not disponibles else "saldo_insuficiente"] += 1
@@ -399,6 +412,9 @@ def cruzar_extraccion_con_crp(ruta_extraccion: str, ruta_crp: str, ruta_salida: 
                 if c in cols_numericas:
                     dst.number_format = "General"
             ws_out.cell(fila_out, col_nueva, interno).number_format = "@"
+            if actualizar_saldo and col_saldo is not None and disponibles:
+                s_ant = next((s for i, _, s in asign if i == interno), None)
+                ws_out.cell(fila_out, col_saldo + 1, float(s_ant) if s_ant is not None else None)
             if interno in (MARCA_SIN_CRUCE, MARCA_SIN_SALDO):
                 for c in range(1, ancho_total + 1):
                     ws_out.cell(fila_out, c).fill = FILL_ERROR
