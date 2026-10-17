@@ -25,9 +25,9 @@ bien aunque se abra en un visor que no recalcula.
   F  Anulaciones del mes     = Anulaciones CRP: Σ(Liberación total + Liberación parcial)
                                del rubro con Fecha Liberación dentro del mes del corte
   G  Anulaciones acumuladas  = Anulaciones CRP: misma suma para los meses ANTERIORES
-                               al del corte (ej. corte julio: F = julio, G = hasta junio).
-                               Solo registros con Número de Oficio/Acta de anulación
-                               (las correcciones "ERROR EN CARGUE" de ene-mar no tienen).
+                               al del corte, desde enero de la vigencia (ej. corte julio:
+                               F = julio, G = enero a junio). Incluye todos los registros,
+                               también los que no tienen Número de Oficio/Acta.
   H  Reservas definitivas    = Ejecución  "CDP Acumulado // RESERVAS DEFINITIVAS"
   J  Autorización giro mes   = Ejecución  "Giro Mes Presupuestal // AUTORIZACION DE GIRO DEL MES"
   K  Autorización giro acum. = Ejecución  "Giros Acumulados Ppto // AUTORIZACION DE GIRO ACUMULADA"
@@ -273,7 +273,7 @@ def calcular(origen_ejecucion, origen_anulaciones, anio, mes):
     anul = leer_anulaciones(origen_anulaciones)
     anul = anul[anul["fecha"].dt.year == anio]
     del_mes = anul[anul["fecha"].dt.month == mes]
-    previas = anul[(anul["fecha"].dt.month < mes) & anul["con_oficio"]]
+    previas = anul[anul["fecha"].dt.month < mes]
 
     filas, alertas = [], []
     for codigo, fila in RUBROS:
