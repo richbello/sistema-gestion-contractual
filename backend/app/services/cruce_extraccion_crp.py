@@ -18,7 +18,8 @@ Para cada fila de la Extracción:
      quedó después del primero.
 
 Salida:
-  - Hoja 1 (misma estructura A:T de la Extracción) + columna U 'N° Interno CRP'.
+  - Hoja 1 con la misma estructura A:T; la columna 'CRP' pasa a llamarse
+    'N° Interno CRP' y lleva el CRP asignado. Montos como número.
   - Hoja 'Cruce_CRP' con el detalle del cruce (auditoría).
 
 Las columnas se ubican por NOMBRE de encabezado, no por posición, porque el
@@ -74,8 +75,19 @@ EXT_COLS_SOLO_PRIMERA = [
 # Así la suma de las filas sigue dando exactamente el Neto original.
 EXT_NETO = "Neto a Pagar"
 
-# Nueva columna que se agrega a la Extracción
+# El N° Interno CRP asignado se escribe EN la columna 'CRP' de la Extracción,
+# que pasa a llamarse 'N° Interno CRP' (misma posición, A:T no cambia).
+# Si la Extracción no trae columna 'CRP', se agrega al final.
+EXT_CRP = "CRP"
 EXT_COL_NUEVA = "N° Interno CRP"
+
+# Columnas que en la salida quedan como NÚMERO (Módulo 01 las deja como texto).
+# Código Bco, Tipo Cta, No Cuenta y N° Interno CRP siguen como texto (ceros a
+# la izquierda).
+EXT_COLS_NUMERICAS = [
+    "NIT_CC", "Valor Bruto", "BASE RETEICA", "Valor Reteica", "TOTAL DESCUENTOS",
+    "Neto a Pagar", "PERIODO", "PAGO No.", "HONOR_BASE", "HONOR_VALOR", "SALDO CRP",
+]
 
 # Encabezados en el Reporte CRP
 CRP_COMPROMISO = "No. Compromiso"
@@ -167,6 +179,20 @@ def _escribir_como_original(original, nuevo: Decimal):
     if isinstance(original, float):
         return float(nuevo)
     return int(entero) if nuevo == entero else float(nuevo)
+
+
+def _a_numero(v):
+    """'4703400' -> 4703400, '0.766' -> 0.766; lo que no sea número queda igual."""
+    if v is None or isinstance(v, (int, float)):
+        return v
+    s = str(v).strip()
+    if not s:
+        return None
+    try:
+        d = Decimal(s)
+    except Exception:
+        return v
+    return int(d) if d == d.to_integral_value() else float(d)
 
 
 def _buscar_columnas(headers, requeridas, origen):
@@ -285,21 +311,34 @@ def cruzar_extraccion_con_crp(ruta_extraccion: str, ruta_crp: str, ruta_salida: 
         col_neto = _buscar_columnas(headers, [EXT_NETO], "Extracción")[EXT_NETO]
     except ValueError:
         col_neto = None
+    cols_numericas = set()
+    for n in EXT_COLS_NUMERICAS:
+        try:
+            cols_numericas.add(_buscar_columnas(headers, [n], "Extracción")[n])
+        except ValueError:
+            pass
+    # Columna donde va el N° Interno CRP: la propia 'CRP' (o la ya renombrada)
+    col_crp = next((i for i, hh in enumerate(headers)
+                    if _norm_header(hh) in (_norm_header(EXT_CRP), _norm_header(EXT_COL_NUEVA))), None)
 
     wb_out = openpyxl.Workbook()
     ws_out = wb_out.active
     ws_out.title = ws_in.title
 
-    # Encabezados (copia estilo) + columna nueva
     for c in range(1, max_col + 1):
         src = ws_in.cell(1, c)
         dst = ws_out.cell(1, c, src.value)
         _copiar_estilo(src, dst)
-    col_nueva = max_col + 1
-    h = ws_out.cell(1, col_nueva, EXT_COL_NUEVA)
-    _copiar_estilo(ws_in.cell(1, max_col), h)
-    h.fill = FILL_HEADER_NUEVO
-    h.font = Font(bold=True)
+    if col_crp is not None:
+        col_nueva = col_crp + 1
+        ws_out.cell(1, col_nueva, EXT_COL_NUEVA)
+        ancho_total = max_col
+    else:
+        col_nueva = max_col + 1
+        h = ws_out.cell(1, col_nueva, EXT_COL_NUEVA)
+        _copiar_estilo(ws_in.cell(1, max_col), h)
+        h.font = Font(bold=True)
+        ancho_total = col_nueva
 
     for letra, dim in ws_in.column_dimensions.items():
         ws_out.column_dimensions[letra].width = dim.width
@@ -354,14 +393,17 @@ def cruzar_extraccion_con_crp(ruta_extraccion: str, ruta_crp: str, ruta_salida: 
                             f"Fila {r} ({valores[col[EXT_CONTRATO]]}): la 1a parte no cubre los descuentos")
                     nuevos[col_neto] = _escribir_como_original(valores[col_neto], neto)
             for c in range(max_col):
-                dst = ws_out.cell(fila_out, c + 1, nuevos[c])
+                v = _a_numero(nuevos[c]) if c in cols_numericas else nuevos[c]
+                dst = ws_out.cell(fila_out, c + 1, v)
                 _copiar_estilo(celdas[c], dst)
-            cel = ws_out.cell(fila_out, col_nueva, interno)
+                if c in cols_numericas:
+                    dst.number_format = "General"
+            ws_out.cell(fila_out, col_nueva, interno).number_format = "@"
             if interno in (MARCA_SIN_CRUCE, MARCA_SIN_SALDO):
-                for c in range(1, col_nueva + 1):
+                for c in range(1, ancho_total + 1):
                     ws_out.cell(fila_out, c).fill = FILL_ERROR
             elif len(partes) > 1:
-                for c in range(1, col_nueva + 1):
+                for c in range(1, ancho_total + 1):
                     ws_out.cell(fila_out, c).fill = FILL_DIVIDIDA
 
             saldo_antes = next((s for i, _, s in asign if i == interno), None)

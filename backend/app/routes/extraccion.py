@@ -3,9 +3,36 @@ import json
 import traceback
 from flask import Blueprint, request, jsonify, current_app, send_file
 from ..services.extraccion_service import ejecutar_extraccion, extraer_pdfs, consolidar
+from ..services.cruce_extraccion_crp import cruzar_extraccion_con_crp
 from .utils import guardar_archivo, nombre_salida
 
 extraccion_bp = Blueprint("extraccion", __name__)
+
+# Base CRP que se carga en Cuadre PAC (se reutiliza si no se adjunta Reporte CRP)
+ARCHIVO_BASE_CRP = "cuadre_base_crp.xlsx"
+
+
+def _ruta_reporte_crp(upload_dir):
+    """Reporte CRP adjunto en la petición o, si no viene, la Base CRP del
+    periodo guardada en Cuadre PAC. Devuelve (ruta, origen) o (None, None)."""
+    f = request.files.get("reporte_crp")
+    if f and f.filename:
+        return guardar_archivo(f, upload_dir), "adjunto"
+    base = os.path.join(current_app.config["OUTPUT_FOLDER"], ARCHIVO_BASE_CRP)
+    if os.path.isfile(base):
+        return base, "base_guardada"
+    return None, None
+
+
+def _aplicar_cruce_crp(resultado, ruta_salida, ruta_crp, origen):
+    """Cruza la extracción recién generada con el Reporte CRP (en el mismo
+    archivo): asigna N° Interno CRP y divide pagos cuando el saldo no alcanza."""
+    if not ruta_crp:
+        resultado["cruce_crp"] = None
+        return
+    resumen = cruzar_extraccion_con_crp(ruta_salida, ruta_crp, ruta_salida)
+    resumen["origen_crp"] = origen
+    resultado["cruce_crp"] = resumen
 
 
 @extraccion_bp.route("/procesar", methods=["POST"])
@@ -24,10 +51,12 @@ def procesar():
         rutas_pdfs = [guardar_archivo(f, upload_dir) for f in pdfs if f.filename.lower().endswith(".pdf")]
         if not rutas_pdfs:
             return jsonify({"ok": False, "mensaje": "Ninguno de los archivos enviados es un PDF válido."}), 400
-        ruta_salida = nombre_salida(output_dir, "Extraccion_Entrega")
+        ruta_crp, origen_crp = _ruta_reporte_crp(upload_dir)
+        ruta_salida = nombre_salida(output_dir, "Extraccion_Entrega_con_CRP" if ruta_crp else "Extraccion_Entrega")
         resultado = ejecutar_extraccion(ruta_base, rutas_pdfs, ruta_salida)
         if not resultado.get("ok"):
             return jsonify(resultado), 422
+        _aplicar_cruce_crp(resultado, ruta_salida, ruta_crp, origen_crp)
         resultado["descarga"] = f"/api/extraccion/descargar/{os.path.basename(ruta_salida)}"
         return jsonify(resultado)
     except Exception as e:
@@ -94,12 +123,14 @@ def consolidar_endpoint():
         errores = json.loads(errores_raw) if errores_raw else []
 
         ruta_base = guardar_archivo(request.files["basegen"], upload_dir)
-        ruta_salida = nombre_salida(output_dir, "Extraccion_Entrega")
+        ruta_crp, origen_crp = _ruta_reporte_crp(upload_dir)
+        ruta_salida = nombre_salida(output_dir, "Extraccion_Entrega_con_CRP" if ruta_crp else "Extraccion_Entrega")
 
         resultado = consolidar(registros, ruta_base, ruta_salida,
                                total_pdfs=total_pdfs, errores=errores)
         if not resultado.get("ok"):
             return jsonify(resultado), 422
+        _aplicar_cruce_crp(resultado, ruta_salida, ruta_crp, origen_crp)
         resultado["descarga"] = f"/api/extraccion/descargar/{os.path.basename(ruta_salida)}"
         return jsonify(resultado)
     except Exception as e:

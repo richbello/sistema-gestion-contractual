@@ -22,7 +22,6 @@ function descargarSaneada(b64) {
 const MODULOS = {
   extraccion:    { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Extracción de causaciones" },
   sipago: { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Extracción SIPAGO" },
-  "cruce-crp":   { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Cruce Extracción ↔ CRP" },
 
   plantilla:     { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Plantilla de pagos" },
   pac:           { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Cuadre PAC" },
@@ -145,8 +144,7 @@ function configurarDropzoneMultiple(dropId, inputId, listaId) {
 configurarDropzoneUnico("drop-basegen", "input-basegen", "lista-basegen");
 configurarDropzoneMultiple("drop-pdfs", "input-pdfs", "lista-pdfs");
 configurarDropzoneUnico("drop-extraccion-in", "input-extraccion-in", "lista-extraccion-in");
-configurarDropzoneUnico("drop-cruce-ext", "input-cruce-ext", "lista-cruce-ext");
-configurarDropzoneUnico("drop-cruce-crp", "input-cruce-crp", "lista-cruce-crp");
+configurarDropzoneUnico("drop-crp-extraccion", "input-crp-extraccion", "lista-crp-extraccion");
 configurarDropzoneUnico("drop-plantilla-pac", "input-plantilla-pac", "lista-plantilla-pac");
 configurarDropzoneUnico("drop-reporte-pac", "input-reporte-pac", "lista-reporte-pac");
 configurarDropzoneUnico("drop-plantilla-ec", "input-plantilla-ec", "lista-plantilla-ec");
@@ -253,6 +251,7 @@ async function _extraerPorLotes(basegen, pdfsArray) {
   fdFinal.append("registros", JSON.stringify(registros));
   fdFinal.append("total_pdfs", String(totalPdfs));
   fdFinal.append("errores", JSON.stringify(errores));
+  _adjuntarReporteCRP(fdFinal);
 
   const respFinal = await fetch(`${API_BASE}/api/extraccion/consolidar`, {
     method: "POST",
@@ -265,10 +264,16 @@ async function _extraerPorLotes(basegen, pdfsArray) {
   return dataFinal;
 }
 
+function _adjuntarReporteCRP(fd) {
+  const crp = document.getElementById("input-crp-extraccion").files[0];
+  if (crp) fd.append("reporte_crp", crp);
+}
+
 async function _extraerDirecto(basegen, pdfs) {
   const fd = new FormData();
   fd.append("basegen", basegen);
   for (const f of pdfs) fd.append("pdfs", f);
+  _adjuntarReporteCRP(fd);
   const resp = await fetch(`${API_BASE}/api/extraccion/procesar`, { method: "POST", body: fd });
   const data = await resp.json();
   if (!resp.ok || !data.ok) {
@@ -302,9 +307,22 @@ document.getElementById("form-extraccion").addEventListener("submit", async (e) 
     cont.appendChild(crearMetrica(data.procesados, "Procesados con éxito", "verde"));
     cont.appendChild(crearMetrica(data.errores.length, "Con errores", data.errores.length ? "rojo" : ""));
     cont.appendChild(crearMetrica(data.registros, "Registros finales", "ocre"));
+    const avisos = [];
     if (data.errores && data.errores.length) {
-      mostrarAlerta("alerta-extraccion", `Algunos archivos no se pudieron procesar: ${data.errores.slice(0, 5).join("; ")}${data.errores.length > 5 ? "…" : ""}`);
+      avisos.push(`Algunos archivos no se pudieron procesar: ${data.errores.slice(0, 5).join("; ")}${data.errores.length > 5 ? "…" : ""}`);
     }
+    const cx = data.cruce_crp;
+    if (cx) {
+      cont.appendChild(crearMetrica(cx.filas_salida, "Filas con N° Interno CRP", "verde"));
+      cont.appendChild(crearMetrica(cx.filas_divididas, "Pagos divididos en varios CRP", cx.filas_divididas ? "ocre" : ""));
+      if (cx.sin_cruce) avisos.push(`${cx.sin_cruce} pago(s) marcados "SIN CRUCE": el contrato no está en el Reporte CRP.`);
+      if (cx.saldo_insuficiente) avisos.push(`${cx.saldo_insuficiente} pago(s) marcados "SALDO INSUFICIENTE": los CRP del contrato no alcanzan.`);
+      if (cx.alertas && cx.alertas.length) avisos.push(...cx.alertas);
+      if (cx.origen_crp === "base_guardada") avisos.push("Se usó la Base CRP cargada en Cuadre PAC (no se adjuntó Reporte CRP).");
+    } else {
+      avisos.push("No se asignó N° Interno CRP: adjunta el Reporte CRP (o cárgalo en Cuadre PAC) para hacer el cruce.");
+    }
+    if (avisos.length) mostrarAlerta("alerta-extraccion", avisos.join(" "));
     document.getElementById("link-descarga-extraccion").href = API_BASE + data.descarga;
     document.getElementById("resultados-extraccion").classList.add("visible");
   } catch (err) {
@@ -312,61 +330,6 @@ document.getElementById("form-extraccion").addEventListener("submit", async (e) 
   } finally {
     btn.disabled = false;
     mostrarEstado("estado-extraccion", false);
-  }
-});
-/* ---------------------------- Cruce Extracción ↔ CRP ---------------------------- */
-document.getElementById("form-cruce-crp").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  mostrarAlerta("alerta-cruce-crp", "");
-  document.getElementById("resultados-cruce-crp").classList.remove("visible");
-  const ext = document.getElementById("input-cruce-ext").files[0];
-  const crp = document.getElementById("input-cruce-crp").files[0];
-  if (!ext || !crp) {
-    mostrarAlerta("alerta-cruce-crp", "Debes adjuntar el archivo de extracción y el Reporte CRP.");
-    return;
-  }
-  const fd = new FormData();
-  fd.append("extraccion", ext);
-  fd.append("reporte_crp", crp);
-  const btn = document.getElementById("btn-cruce-crp");
-  btn.disabled = true;
-  mostrarEstado("estado-cruce-crp", true);
-  try {
-    const resp = await fetch(`${API_BASE}/api/cruce-crp/procesar`, { method: "POST", body: fd });
-    const data = await resp.json();
-    if (!resp.ok || !data.ok) {
-      mostrarAlerta("alerta-cruce-crp", data.mensaje || "No se pudo realizar el cruce.");
-      return;
-    }
-    const cont = document.getElementById("metricas-cruce-crp");
-    cont.innerHTML = "";
-    cont.appendChild(crearMetrica(data.filas_entrada, "Filas de la extracción"));
-    cont.appendChild(crearMetrica(data.filas_salida, "Filas resultantes", "verde"));
-    cont.appendChild(crearMetrica(data.filas_divididas, "Pagos divididos en varios CRP", data.filas_divididas ? "ocre" : ""));
-    cont.appendChild(crearMetrica(data.sin_cruce, "Contratos sin CRP", data.sin_cruce ? "rojo" : ""));
-    cont.appendChild(crearMetrica(data.saldo_insuficiente, "Con saldo insuficiente", data.saldo_insuficiente ? "rojo" : ""));
-    const idAviso = "aviso-cruce-crp";
-    let aviso = document.getElementById(idAviso);
-    if (aviso) aviso.remove();
-    const avisos = [];
-    if (data.sin_cruce) avisos.push(`${data.sin_cruce} fila(s) quedaron marcadas "SIN CRUCE" (el contrato no está en el Reporte CRP).`);
-    if (data.saldo_insuficiente) avisos.push(`${data.saldo_insuficiente} fila(s) marcadas "SALDO INSUFICIENTE": los CRP del contrato no alcanzan para el pago.`);
-    if (data.alertas && data.alertas.length) avisos.push(...data.alertas);
-    if (avisos.length) {
-      aviso = document.createElement("div");
-      aviso.id = idAviso;
-      aviso.className = "alerta alerta-aviso";
-      aviso.style.display = "block";
-      aviso.innerHTML = `<strong>Revisar:</strong> ${avisos.join(" ")} Las filas aparecen resaltadas en rojo en el Excel.`;
-      cont.parentNode.insertBefore(aviso, cont.nextSibling);
-    }
-    document.getElementById("link-descarga-cruce-crp").href = API_BASE + data.descarga;
-    document.getElementById("resultados-cruce-crp").classList.add("visible");
-  } catch (err) {
-    mostrarAlerta("alerta-cruce-crp", "Error de conexión con el servidor. Verifica que el backend esté en ejecución.");
-  } finally {
-    btn.disabled = false;
-    mostrarEstado("estado-cruce-crp", false);
   }
 });
 /* ---------------------------- Módulo 02: Plantilla de pagos ---------------------------- */

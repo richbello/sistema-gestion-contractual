@@ -36,7 +36,6 @@ def create_app():
     from .routes.vfi import vfi_bp
     from .routes.paginas import paginas_bp
     from .routes.extraccion_sipago import extraccion_sipago_bp
-    from .routes.cruce_crp import cruce_bp
 
     app.register_blueprint(paginas_bp)
     app.register_blueprint(extraccion_bp, url_prefix="/api/extraccion")
@@ -48,7 +47,6 @@ def create_app():
     app.register_blueprint(oxp_bp, url_prefix="/api/oxp")
     app.register_blueprint(vfi_bp)
     app.register_blueprint(extraccion_sipago_bp, url_prefix="/api/extraccion-sipago")
-    app.register_blueprint(cruce_bp, url_prefix="/api/cruce-crp")
 
     @app.route("/api/salud")
     def salud():
