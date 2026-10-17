@@ -1,9 +1,14 @@
-﻿# Datos sensibles
+# Datos sensibles
 *.xlsx
 *.xls
 *.csv
 *.json
 *.pkl
+
+# Plantillas que la app SI necesita (excepciones)
+!backend/app/plantillas/**
+!**/package.json
+!**/package-lock.json
 backend/datos_entrada/
 backend/app/data/
 

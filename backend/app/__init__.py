@@ -22,8 +22,21 @@ def create_app():
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
     os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
 
-    # CORS permisivo para desarrollo (Codespace, localhost)
-    CORS(app, supports_credentials=True, origins=["*"], allow_headers=["*"], methods=["*"])
+    # CORS: solo el frontend publicado y desarrollo local.
+    # Orígenes adicionales (p. ej. un Codespace) se agregan con CORS_EXTRA="https://a,https://b".
+    origenes = [
+        "https://richbello.github.io",
+        r"http://localhost(:\d+)?",
+        r"http://127\.0\.0\.1(:\d+)?",
+        r"https://.*\.app\.github\.dev",
+    ]
+    origenes += [o.strip() for o in os.getenv("CORS_EXTRA", "").split(",") if o.strip()]
+    CORS(app, origins=origenes, allow_headers=["Content-Type", "X-API-Key"],
+         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+         expose_headers=["Content-Disposition"])
+
+    from .auth import instalar_autenticacion
+    instalar_autenticacion(app)
 
     # Registro de módulos (blueprints)
     from .routes.extraccion import extraccion_bp
