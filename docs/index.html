@@ -60,6 +60,7 @@
       <button class="nav-item" data-vista="oxp"><span class="nav-numero">07</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 9v11"/></svg> CDP-CRP de OXP</button>
       <button class="nav-item" data-vista="exogena"><span class="nav-numero">08</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 18h4M9 12h2"/></svg> Reportes Exógena</button>
       <button class="nav-item" data-vista="vigilancia-fiscal"><span class="nav-numero">09</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12l4 4 12-12"/><path d="M12 2l7 4v6c0 5-3 8-7 10-4-2-7-5-7-10V6z"/></svg> Vigilancia Fiscal IA</button>
+      <button class="nav-item" data-vista="sivicof"><span class="nav-numero">10</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h10l6 6v10H4z"/><path d="M14 4v6h6"/><path d="M8 14h8M8 17h5"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/></svg> Reportes SIVICOF</button>
     </nav>
 
     <nav class="nav-modulos" style="margin-top: 20px; border-top: 1px solid #ddd; padding-top: 15px;">
@@ -1032,6 +1033,197 @@
 </section>
 
 
+    <!-- ===================== VISTA 10: Reportes SIVICOF ===================== -->
+    <section class="vista" id="vista-sivicof" hidden>
+      <style>
+        #vista-sivicof .campo input[type="month"], #vista-sivicof .campo input[type="date"],
+        #vista-sivicof .campo input[type="email"], #vista-sivicof .campo textarea {
+          font-family: var(--fuente-cuerpo); font-size: 14px; padding: 10px 12px;
+          border: 1px solid var(--tinta-100); border-radius: var(--radio-md);
+          background: var(--papel-alt); color: var(--tinta-900); }
+        #vista-sivicof .campo textarea { min-height: 120px; resize: vertical; }
+        #vista-sivicof .sivicof-plazo { font-family: var(--fuente-dato); font-size: 12px; color: var(--azul-800);
+          background: var(--azul-100); border: 1px solid var(--azul-200); padding: 6px 12px;
+          border-radius: 999px; display: inline-block; margin-top: 10px; }
+        #vista-sivicof .tabla-datos td { white-space: nowrap; }
+        #vista-sivicof .sivicof-textos { display: grid; gap: 10px; margin-top: 18px; font-size: 13.5px; color: var(--tinta-700); }
+        #vista-sivicof .sivicof-textos > div { background: var(--papel-alt); border: 1px solid var(--tinta-100);
+          border-radius: var(--radio-md); padding: 10px 14px; line-height: 1.5; }
+        #vista-sivicof .sivicof-etq { display: block; font-family: var(--fuente-dato); font-size: 10.5px;
+          letter-spacing: .08em; text-transform: uppercase; color: var(--ocre-600); margin-bottom: 2px; }
+        #vista-sivicof .fila-copiar { display: flex; gap: 8px; align-items: flex-start; }
+        #vista-sivicof .fila-copiar > :first-child { flex: 1; }
+        #vista-sivicof .btn-mini { padding: 9px 12px; font-size: 12.5px; }
+      </style>
+
+      <form class="panel" onsubmit="return false;">
+        <div class="panel-acento-superior"></div>
+        <div class="panel-cuerpo">
+          <div class="intro-modulo">
+            <span class="paso-eyebrow">Contraloría de Bogotá · Rendición mensual</span>
+            <h2>Reportes SIVICOF</h2>
+            <p>Genera el formulario CB-0104 (<code>01_000000005_AAAAMMDD.xlsx</code>) desde los reportes
+               de SAP y las certificaciones CBN-0001, 1093, 1098 y 1109 en PDF, empaquetados en
+               <strong>SIVICOF &lt;MES&gt;.zip</strong> listo para enviar.</p>
+            <span class="sivicof-plazo" id="sivicof-plazo"></span>
+          </div>
+
+          <div class="grid-form">
+            <div class="campo">
+              <label for="sivicof-mes">Mes a reportar</label>
+              <div class="ayuda">El corte es el último día del mes (celda C5 y nombre del Excel).</div>
+              <input type="month" id="sivicof-mes" required>
+            </div>
+            <div class="campo">
+              <label for="sivicof-firma">Fecha de firma de los certificados</label>
+              <div class="ayuda">Va en letras: "Dado en Bogotá D.C. a los nueve (09) días…"</div>
+              <input type="date" id="sivicof-firma" required>
+            </div>
+            <div class="campo">
+              <label for="sivicof-modificacion">¿Hubo modificación presupuestal en el mes?</label>
+              <div class="ayuda">Define el texto del CBN-1093 y si se adjunta el decreto.</div>
+              <select id="sivicof-modificacion">
+                <option value="NO">No</option>
+                <option value="SI">Sí, por Decreto Local</option>
+              </select>
+            </div>
+            <div></div>
+          </div>
+
+          <div id="sivicof-bloque-decreto" hidden>
+            <div class="grid-form" style="margin-top:22px;">
+              <div class="campo">
+                <label for="sivicof-num-decreto">No. del Decreto Local</label>
+                <input type="text" id="sivicof-num-decreto" placeholder="Ej. 11">
+              </div>
+              <div class="campo">
+                <label for="sivicof-fecha-decreto">Fecha del decreto (opcional)</label>
+                <div class="ayuda">Con fecha: "No. 04 del 06 de mayo de 2026". Sin fecha: "No. 11 de septiembre de 2026".</div>
+                <input type="date" id="sivicof-fecha-decreto">
+              </div>
+            </div>
+            <div class="grid-form una-col" style="margin-top:22px;">
+              <div class="campo">
+                <label>PDF del decreto</label>
+                <div class="dropzone" id="drop-sivicof-decreto">
+                  <input type="file" id="input-sivicof-decreto" accept=".pdf">
+                  <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+                  <div class="dropzone-texto"><strong>Arrastra el decreto</strong> o haz clic</div>
+                  <div class="dropzone-detalle">.pdf · se incluye en el ZIP con su nombre original</div>
+                </div>
+                <div class="lista-archivos" id="lista-sivicof-decreto"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid-form" style="margin-top:22px;">
+            <div class="campo">
+              <label>Reporte de Ejecución de Gastos (SAP)</label>
+              <div class="ayuda">Con corte al último día del mes. De aquí salen E, H, J y K.</div>
+              <div class="dropzone" id="drop-sivicof-ejecucion">
+                <input type="file" id="input-sivicof-ejecucion" accept=".xlsx,.xls">
+                <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+                <div class="dropzone-texto"><strong>Arrastra el archivo</strong> o haz clic</div>
+                <div class="dropzone-detalle">.xlsx · Ejecucion Gastos …</div>
+              </div>
+              <div class="lista-archivos" id="lista-sivicof-ejecucion"></div>
+            </div>
+            <div class="campo">
+              <label>Reporte de Anulaciones de CRP (SAP)</label>
+              <div class="ayuda">Liberación total + parcial por Fecha Liberación: F = mes del corte, G = meses anteriores.</div>
+              <div class="dropzone" id="drop-sivicof-anulaciones">
+                <input type="file" id="input-sivicof-anulaciones" accept=".xlsx,.xls">
+                <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+                <div class="dropzone-texto"><strong>Arrastra el archivo</strong> o haz clic</div>
+                <div class="dropzone-detalle">.xlsx · Reporte Anulaciones CRP …</div>
+              </div>
+              <div class="lista-archivos" id="lista-sivicof-anulaciones"></div>
+            </div>
+          </div>
+
+          <div class="barra-acciones">
+            <button type="button" class="btn btn-primario" id="btn-sivicof-calcular">
+              <svg class="icono-btn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/></svg>
+              Revisar cifras
+            </button>
+            <div class="estado-proceso" id="estado-sivicof" style="margin-top:0"><span class="spinner"></span> Leyendo reportes…</div>
+          </div>
+
+          <div class="alerta alerta-error" id="alerta-sivicof"></div>
+
+          <div class="resultados" id="resultados-sivicof">
+            <div class="resultados-cabecera">
+              <svg class="sello-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>
+              <h3>CB-0104 · Seguimiento a reservas y obligaciones por pagar</h3>
+            </div>
+            <div class="metricas-grid" id="metricas-sivicof"></div>
+
+            <div class="tabla-wrap" style="overflow-x:auto;">
+              <table class="tabla-datos">
+                <thead>
+                  <tr>
+                    <th>Rubro</th><th>E · Constituidas</th><th>F · Anul. mes</th><th>G · Anul. acum.</th>
+                    <th>H · Definitivas</th><th>I · %</th><th>J · Giro mes</th><th>K · Giro acum.</th>
+                    <th>L · %</th><th>M · Saldo</th>
+                  </tr>
+                </thead>
+                <tbody id="tabla-sivicof"></tbody>
+              </table>
+            </div>
+            <div style="font-size:12px;color:var(--tinta-500);margin-top:8px;">
+              Se diligencian solo C5 y E, F, G, H, J, K. I, L y M (en gris) son fórmulas del formato.
+              ✓ = cuadra con SAP. Pase el cursor sobre la marca para ver el valor de control.
+            </div>
+
+            <div id="alertas-sivicof"></div>
+            <div class="sivicof-textos" id="textos-sivicof"></div>
+
+            <div class="descarga-card" style="margin-top:22px;">
+              <div class="descarga-info">
+                <svg class="descarga-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+                <div>
+                  <div class="descarga-nombre" id="sivicof-nombre-zip">SIVICOF.zip</div>
+                  <div class="descarga-detalle">Excel CB-0104 + CBN-0001, 1093, 1098, 1109 en PDF + decreto</div>
+                </div>
+              </div>
+              <button type="button" class="btn btn-dorado" id="btn-sivicof-generar" disabled>
+                <svg class="icono-btn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+                Generar paquete
+              </button>
+            </div>
+            <div class="estado-proceso" id="estado-sivicof-generar"><span class="spinner"></span> Generando Excel y PDF…</div>
+
+            <div id="sivicof-descargado" hidden style="margin-top:22px;">
+              <div class="intro-modulo" style="margin-bottom:12px;">
+                <span class="paso-eyebrow">Último paso</span>
+                <p>Adjunte el ZIP descargado en un correo nuevo de Outlook con estos datos.</p>
+              </div>
+              <div class="grid-form una-col">
+                <div class="campo">
+                  <label for="sivicof-para">Para</label>
+                  <div class="fila-copiar"><input type="text" id="sivicof-para" readonly>
+                    <button type="button" class="btn btn-secundario btn-mini" data-copiar="sivicof-para">Copiar</button></div>
+                </div>
+                <div class="campo">
+                  <label for="sivicof-asunto">Asunto</label>
+                  <div class="fila-copiar"><input type="text" id="sivicof-asunto">
+                    <button type="button" class="btn btn-secundario btn-mini" data-copiar="sivicof-asunto">Copiar</button></div>
+                </div>
+                <div class="campo">
+                  <label for="sivicof-cuerpo">Mensaje</label>
+                  <div class="fila-copiar"><textarea id="sivicof-cuerpo"></textarea>
+                    <button type="button" class="btn btn-secundario btn-mini" data-copiar="sivicof-cuerpo">Copiar</button></div>
+                </div>
+              </div>
+              <div class="barra-acciones" style="margin-top:14px;padding-top:14px;">
+                <a class="btn btn-secundario" id="sivicof-mailto" href="#">Abrir borrador de correo</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>
+    </section>
+
   </main>
 </div>
 
@@ -1052,6 +1244,7 @@
   <script src="static/js/estadocuenta-masivo.js"></script>
   <script src="static/js/modulo-12-oxp.js"></script>
   <script src="static/js/modulo-10-exogena.js"></script>
+<script src="static/js/modulo-10-sivicof.js"></script>
 
 <script>
 // Vigilancia Fiscal - Módulo 09

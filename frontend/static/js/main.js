@@ -36,6 +36,7 @@ const MODULOS = {
   oxp:           { eyebrow: "Módulo 07 · CDP-CRP de OXP", titulo: "CDP-CRP de OXP" },
   exogena:       { eyebrow: "Módulo 08 · Reportes Exógena", titulo: "Reportes Exógena" },
   "vigilancia-fiscal": { eyebrow: "Módulo 09 · Vigilancia Fiscal IA", titulo: "Vigilancia Fiscal IA" },
+  sivicof:       { eyebrow: "Módulo 10 · Reportes SIVICOF", titulo: "Reportes SIVICOF" },
 };
 /* ---------------------------- Navegación ---------------------------- */
 function cambiarVista(idVista) {
