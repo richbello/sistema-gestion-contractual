@@ -307,9 +307,215 @@
     return wb.xlsx.writeBuffer();
   }
 
+  /* ================= ELABORACIÓN DE CDP (adiciones y prórrogas) ================= */
+
+  // Rectángulos/líneas dibujados en la página (bordes de tablas) desde el operator list de pdf.js
+  function bordesDesdeOperadores(ol, OPS, H) {
+    function mul(m, n) { return [m[0]*n[0]+m[2]*n[1], m[1]*n[0]+m[3]*n[1], m[0]*n[2]+m[2]*n[3], m[1]*n[2]+m[3]*n[3], m[0]*n[4]+m[2]*n[5]+m[4], m[1]*n[4]+m[3]*n[5]+m[5]]; }
+    function ap(m, x, y) { return [m[0]*x + m[2]*y + m[4], m[1]*x + m[3]*y + m[5]]; }
+    function caja(p, q) { return { x0: Math.min(p[0], q[0]), x1: Math.max(p[0], q[0]), y0: H - Math.max(p[1], q[1]), y1: H - Math.min(p[1], q[1]) }; }
+    var ctm = [1, 0, 0, 1, 0, 0], pila = [], rects = [];
+    for (var i = 0; i < ol.fnArray.length; i++) {
+      var fn = ol.fnArray[i], a = ol.argsArray[i];
+      if (fn === OPS.save) pila.push(ctm.slice());
+      else if (fn === OPS.restore) ctm = pila.pop() || ctm;
+      else if (fn === OPS.transform) ctm = mul(ctm, a);
+      else if (fn === OPS.constructPath) {
+        var ops = a[0], c = a[1], k = 0, cur = null;
+        for (var j = 0; j < ops.length; j++) {
+          var op = ops[j];
+          if (op === OPS.rectangle) { var x = c[k], y = c[k+1], w = c[k+2], h = c[k+3]; k += 4; rects.push(caja(ap(ctm, x, y), ap(ctm, x + w, y + h))); }
+          else if (op === OPS.moveTo) { cur = ap(ctm, c[k], c[k+1]); k += 2; }
+          else if (op === OPS.lineTo) { var p = ap(ctm, c[k], c[k+1]); k += 2; if (cur) rects.push(caja(cur, p)); cur = p; }
+          else if (op === OPS.curveTo) k += 6;
+          else if (op === OPS.curveTo2 || op === OPS.curveTo3) k += 4;
+        }
+      }
+    }
+    return rects;
+  }
+
+  function agrupar(vals, tol) {                 // agrupa números cercanos
+    var s = vals.slice().sort(function (a, b) { return a - b; }), out = [];
+    s.forEach(function (v) {
+      var u = out[out.length - 1];
+      if (u && v - u.max <= tol) { u.max = v; u.sum += v; u.n++; } else out.push({ min: v, max: v, sum: v, n: 1 });
+    });
+    return out.map(function (g) { return g.sum / g.n; });
+  }
+
+  // Une las líneas de una celda: "recreo-"+"deportivas" → "recreodeportivas"; "CPS-"+"049-2026" → "CPS-049-2026"
+  function unirLineas(lineas) {
+    var t = "";
+    lineas.forEach(function (l) {
+      l = l.trim(); if (!l) return;
+      if (!t) { t = l; return; }
+      if (/-$/.test(t)) {
+        if (/^\d/.test(l) || /\d-$/.test(t) || /[A-Z]{2,}-$/.test(t) && /^\d/.test(l)) t += l;
+        else t = t.replace(/-$/, "") + l;
+      } else t += " " + l;
+    });
+    return t.replace(/\s+/g, " ").trim();
+  }
+
+  // Lee una tabla con bordes: devuelve filas de celdas (texto por columna)
+  function tablaPorBordes(items, rects) {
+    var tk = tokens(items);
+    var hs = rects.filter(function (r) { return r.y1 - r.y0 < 2.5 && r.x1 - r.x0 > 15; });
+    var vs = rects.filter(function (r) { return r.x1 - r.x0 < 2.5 && r.y1 - r.y0 > 4; });
+    if (hs.length < 2 || vs.length < 2) return null;
+    // columnas: líneas verticales con cobertura suficiente
+    var gx = {};
+    vs.forEach(function (r) { var k = Math.round(((r.x0 + r.x1) / 2) / 2); gx[k] = (gx[k] || 0) + (r.y1 - r.y0); });
+    var maxCob = 0; Object.keys(gx).forEach(function (k) { maxCob = Math.max(maxCob, gx[k]); });
+    var xs = agrupar(Object.keys(gx).filter(function (k) { return gx[k] >= maxCob * 0.6; }).map(function (k) { return k * 2; }), 3);
+    var ys = agrupar(hs.map(function (r) { return (r.y0 + r.y1) / 2; }), 2.5);
+    if (xs.length < 2 || ys.length < 2) return null;
+    var x0 = xs[0], x1 = xs[xs.length - 1], filas = [];
+    for (var i = 0; i < ys.length - 1; i++) {
+      var top = ys[i], bot = ys[i + 1];
+      if (bot - top < 6) continue;
+      var dentro = tk.filter(function (t) { var cy = t.y - (t.h || 10) * 0.35, cx = t.x + t.w / 2; return cy > top && cy < bot && cx > x0 && cx < x1; });
+      if (!dentro.length) continue;
+      var celdas = [];
+      for (var c = 0; c < xs.length - 1; c++) {
+        var a = xs[c], b = xs[c + 1];
+        var ts = dentro.filter(function (t) { var cx = t.x + Math.min(t.w, 8) / 2; return cx >= a && cx < b; })
+                       .sort(function (p, q) { return Math.abs(p.y - q.y) > 2 ? p.y - q.y : p.x - q.x; });
+        var lineas = [], yAct = null, prev = null;
+        ts.forEach(function (t) {
+          if (yAct === null || Math.abs(t.y - yAct) > 2) { lineas.push(t.str); yAct = t.y; }
+          else {
+            var hueco = t.x - (prev.x + prev.w);           // sin espacio real entre trozos → pegar
+            lineas[lineas.length - 1] += (hueco < Math.max(0.9, (t.h || 10) * 0.12) ? "" : " ") + t.str;
+          }
+          prev = t;
+        });
+        celdas.push(unirLineas(lineas));
+      }
+      filas.push({ celdas: celdas, xs: xs });
+    }
+    return filas;
+  }
+
+  function columnaDe(h) {
+    var n = norm(h);
+    if (/proye/.test(n)) return "proyecto";
+    if (/objeto/.test(n)) return "objeto";
+    if (/contratista/.test(n)) return "contratista";
+    if (/valor|adicion/.test(n)) return "valor_adicion";
+    if (/meta/.test(n)) return "meta";
+    if (/^con|contrat|cto/.test(n)) return "contrato";
+    return "";
+  }
+
+  // paginas: [{items:[...], rects:[...]}]
+  function parsearSolicitudCDP(paginas, nombreArchivo) {
+    var texto = paginas.map(function (p) { return p.items.map(function (i) { return i.str; }).join(" "); }).join("\n");
+    var radicado = "", fecha = "";
+    var m = texto.match(/\b(20\d{2}55\d{6,10})\b/); if (m) radicado = m[1];
+    var f = texto.match(/Fecha\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]20\d{2})/i); if (f) fecha = f[1];
+    var mapa = null, filas = [], sinBordes = false;
+    paginas.forEach(function (p) {
+      var tabla = tablaPorBordes(p.items, p.rects || []);
+      if (!tabla) { sinBordes = true; return; }
+      tabla.forEach(function (fl) {
+        var txt = norm(fl.celdas.join(" "));
+        if (/objeto/.test(txt) && /contratista/.test(txt) && !/\d{3,}-?20\d{2}/.test(fl.celdas.join(" "))) {
+          mapa = fl.celdas.map(columnaDe); return;      // fila de encabezado
+        }
+        if (!mapa) return;
+        var r = {};
+        mapa.forEach(function (k, i) { if (k) r[k] = fl.celdas[i] || ""; });
+        var cto = String(r.contrato || "").replace(/\s/g, "").match(/(\d{1,4})-?(20\d{2})/);
+        if (!cto) return;
+        filas.push({
+          proyecto: String(r.proyecto || "").replace(/\D/g, ""),
+          meta: r.meta || "",
+          contrato: ("000" + cto[1]).slice(-3) + "-" + cto[2],
+          contratista: r.contratista || "",
+          valor_adicion: aNumero(String(r.valor_adicion || "").match(/[\d.,]+/) ? String(r.valor_adicion).match(/[\d][\d.,]*/)[0] : 0),
+          objeto: r.objeto || "",
+          radicado: radicado, fecha_radicado: fecha, archivo: nombreArchivo || ""
+        });
+      });
+    });
+    return { radicado: radicado, fecha: fecha, filas: filas, archivo: nombreArchivo || "", sinBordes: sinBordes && !filas.length };
+  }
+
+  // Cruce por No. de contrato contra el Objeto del reporte CDP
+  function cruzarPorContrato(filas, indice) {
+    var todos = [];
+    Object.keys(indice.mapa).forEach(function (k) { indice.mapa[k].forEach(function (reg) { reg._cdp = k; todos.push(reg); }); });
+    return filas.map(function (f) {
+      var obs = [], partes = f.contrato.split("-");
+      var re = new RegExp("(^|\\D)0*" + parseInt(partes[0], 10) + "\\s*-\\s*" + partes[1] + "(\\D|$)");
+      var cand = todos.filter(function (reg) { return re.test(String(reg.objeto || "")); });
+      var reg = null;
+      if (!cand.length) obs.push("Contrato " + f.contrato + " no aparece en el Objeto de ningún CDP del reporte");
+      else {
+        cand.forEach(function (c) {
+          var o = sinTildesMayus(c.objeto);
+          c._score = (aNumero(c.valor) === f.valor_adicion ? 2 : 0) + (/ADICION|PRORROGA/.test(o) ? 1 : 0) + (f.proyecto && String(c.pep || c.cadena || "").indexOf(f.proyecto) >= 0 ? 1 : 0);
+        });
+        cand.sort(function (a, b) { return b._score - a._score || Number(b._cdp) - Number(a._cdp); });
+        reg = cand[0];
+        var empatados = cand.filter(function (c) { return c._score === reg._score; });
+        if (empatados.length > 1) obs.push("Hay " + empatados.length + " CDP para este contrato y valor (" + empatados.map(function (c) { return c._cdp; }).join(", ") + "); se tomó el " + reg._cdp);
+        if (aNumero(reg.valor) !== f.valor_adicion) obs.push("Valor del CDP " + reg._cdp + " (" + aNumero(reg.valor).toLocaleString("es-CO") + ") ≠ valor adición");
+      }
+      var pep = reg ? String(reg.pep || "") : "";
+      if (!pep && f.proyecto) pep = "PM/0005/0101/4599000" + f.proyecto;
+      if (pep && f.proyecto && pep.slice(-4) !== f.proyecto) obs.push("El Elemento PEP no corresponde al proyecto " + f.proyecto);
+      var codigo = clasificarCodigo(f.objeto);
+      if (!codigo) obs.push("No se pudo determinar el código 145/148");
+      return {
+        proyecto: f.proyecto, meta: f.meta, contrato: f.contrato, contratista: f.contratista,
+        valor_adicion: f.valor_adicion, objeto: f.objeto, codigo: codigo,
+        importe: f.valor_adicion,
+        pos_pres: reg && reg.concepto !== undefined ? reg.concepto : "",
+        fondos: reg ? String(reg.fondo || "") : "",
+        pep: pep, radicado: f.radicado, cdp_existente: reg ? reg._cdp : "",
+        observaciones: obs.join(" · ")
+      };
+    });
+  }
+
+  async function generarExcelCDP(ExcelJS, filas) {
+    var wb = new ExcelJS.Workbook();
+    wb.creator = "XBOG SMART · Módulo 11";
+    var ws = wb.addWorksheet("CDP Prorroga Adicion", { views: [{ state: "frozen", ySplit: 1 }] });
+    var cols = [
+      ["N° PROYECTO", "proyecto", 12], ["META", "meta", 30], ["CONTRATO", "contrato", 12], ["CONTRATISTA", "contratista", 30],
+      ["VALOR ADICION", "valor_adicion", 15], ["OBJETO", "objeto", 60], ["CÓDIGO", "codigo", 10], [null, null, 4],
+      ["IMPORTE", "importe", 12], ["POS PRES", "pos_pres", 10], ["FONDOS", "fondos", 12], ["ELEMENTO PEP", "pep", 28],
+      ["RADICADO", "radicado", 16], ["OBSERVACIONES", "observaciones", 40]
+    ];
+    ws.columns = cols.map(function (c) { return { header: c[0] || "", width: c[2] }; });
+    ws.getRow(1).eachCell(function (cell) { cell.font = { bold: true }; cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true }; });
+    filas.forEach(function (f) {
+      var row = ws.addRow(cols.map(function (c) {
+        if (!c[1]) return null;
+        var v = f[c[1]];
+        if (c[1] === "valor_adicion") return Number(v || 0).toLocaleString("es-CO");     // como en el formato: "16.974.048"
+        if (c[1] === "importe") return v === "" ? "" : String(v);
+        if (c[1] === "pos_pres" || c[1] === "codigo") return v === "" || v === undefined ? "" : (isNaN(Number(v)) ? v : Number(v));
+        return v === undefined ? "" : v;
+      }));
+      row.eachCell(function (cell, n) {
+        var k = cols[n - 1][1];
+        cell.alignment = { vertical: "top", wrapText: k === "meta" || k === "objeto" || k === "contratista" || k === "observaciones" };
+        if (k === "observaciones") cell.font = { color: { argb: "FFC00000" } };
+      });
+    });
+    return wb.xlsx.writeBuffer();
+  }
+
   var Core = { norm: norm, aNumero: aNumero, claveCDP: claveCDP, clasificarCodigo: clasificarCodigo,
                parsearMemorando: parsearMemorando, indexarReporteCDP: indexarReporteCDP,
-               cruzar: cruzar, generarExcel: generarExcel, COLUMNAS: COLUMNAS };
+               cruzar: cruzar, generarExcel: generarExcel, COLUMNAS: COLUMNAS,
+               bordesDesdeOperadores: bordesDesdeOperadores, tablaPorBordes: tablaPorBordes, parsearSolicitudCDP: parsearSolicitudCDP,
+               cruzarPorContrato: cruzarPorContrato, generarExcelCDP: generarExcelCDP };
   root.M11Core = Core;
   if (typeof module !== "undefined" && module.exports) { module.exports = Core; return; }
 
@@ -331,7 +537,8 @@
     return pdfjsPromesa;
   }
 
-  async function leerPdf(file) {
+  // Devuelve [{items, rects}] por página
+  async function leerPaginas(file, conBordes) {
     var pdfjs = await cargarPdfJs();
     var doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
     var paginas = [];
@@ -339,106 +546,156 @@
       var page = await doc.getPage(p);
       var vp = page.getViewport({ scale: 1 });
       var tc = await page.getTextContent();
-      paginas.push(tc.items.map(function (it) {
+      var items = tc.items.map(function (it) {
         return { str: it.str, x: it.transform[4], y: vp.height - it.transform[5],
                  w: it.width, h: Math.abs(it.transform[3]) || it.height || 10 };
-      }));
+      });
+      var rects = conBordes ? bordesDesdeOperadores(await page.getOperatorList(), pdfjs.OPS, vp.height) : [];
+      paginas.push({ items: items, rects: rects });
     }
-    return parsearMemorando(paginas, file.name);
+    return paginas;
   }
 
   function $(id) { return document.getElementById(id); }
-  function alerta(msg) { if (typeof mostrarAlerta === "function") mostrarAlerta("alerta-m11", msg); else if (msg) alert(msg); }
-  function estado(on) { if (typeof mostrarEstado === "function") mostrarEstado("estado-m11", on); }
   function fmt(n) { return n === "" || n === undefined ? "" : Number(n).toLocaleString("es-CO"); }
-  function esc(s) { return String(s === undefined ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
-
-  var st = { memos: [], indice: null, resultado: [] };
-
-  function actualizarBoton() {
-    var b = $("btn-m11");
-    if (b) b.disabled = !(st.memos.length && st.indice);
+  function esc(s) { return String(s === undefined || s === null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function met(t, v, ac) { return '<div class="metrica-card' + (ac ? " acento-" + ac : "") + '"><div class="metrica-valor">' + v + '</div><div class="metrica-etiqueta">' + t + "</div></div>"; }
+  function descargar(buf, nombre) {
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
   }
-
-  function iniciar() {
-    if (!$("vista-cdpcrp-vigencia")) return;
-    if (typeof configurarDropzoneUnico === "function") configurarDropzoneUnico("drop-m11-cdp", "input-m11-cdp", "lista-m11-cdp");
-
-    // Dropzone múltiple para PDF
-    var drop = $("drop-m11-pdf"), inp = $("input-m11-pdf");
+  function dropMultiple(dropId, inp) {
+    var drop = $(dropId);
     ["dragover", "dragenter"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("arrastrando"); }); });
     ["dragleave", "drop"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove("arrastrando"); }); });
     drop.addEventListener("drop", function (e) { if (e.dataTransfer.files.length) { inp.files = e.dataTransfer.files; inp.dispatchEvent(new Event("change")); } });
+  }
+
+  // Configura un panel (CRP o CDP). cfg: {s: sufijo de ids, leerMemo(file), procesar(filas, indice), excel(filas), nombre(memos), pintar(r)}
+  function montarPanel(cfg) {
+    var s = cfg.s, st = { memos: [], indice: null };
+    function alerta(msg) { if (typeof mostrarAlerta === "function") mostrarAlerta("alerta-" + s, msg); else if (msg) alert(msg); }
+    function estado(on) { if (typeof mostrarEstado === "function") mostrarEstado("estado-" + s, on); }
+    function boton() { $("btn-" + s).disabled = !(st.memos.length && st.indice); }
+    if (typeof configurarDropzoneUnico === "function") configurarDropzoneUnico("drop-" + s + "-cdp", "input-" + s + "-cdp", "lista-" + s + "-cdp");
+    var inp = $("input-" + s + "-pdf");
+    dropMultiple("drop-" + s + "-pdf", inp);
 
     inp.addEventListener("change", async function () {
-      alerta(""); st.memos = []; actualizarBoton();
+      alerta(""); st.memos = []; boton();
       var files = Array.prototype.slice.call(inp.files).filter(function (f) { return /\.pdf$/i.test(f.name); });
-      $("lista-m11-pdf").innerHTML = files.map(function (f) { return '<div class="archivo-chip"><span>' + esc(f.name) + "</span></div>"; }).join("");
+      $("lista-" + s + "-pdf").innerHTML = files.map(function (f) { return '<div class="archivo-chip"><span>' + esc(f.name) + "</span></div>"; }).join("");
       if (!files.length) return;
-      $("resumen-m11-pdf").textContent = "Leyendo " + files.length + " PDF…";
+      $("resumen-" + s + "-pdf").textContent = "Leyendo " + files.length + " PDF…";
       try {
-        for (var i = 0; i < files.length; i++) st.memos.push(await leerPdf(files[i]));
+        for (var i = 0; i < files.length; i++) st.memos.push(await cfg.leerMemo(files[i]));
         var n = st.memos.reduce(function (a, m) { return a + m.filas.length; }, 0);
-        $("resumen-m11-pdf").innerHTML = st.memos.map(function (m) {
+        $("resumen-" + s + "-pdf").innerHTML = st.memos.map(function (m) {
           return "📄 " + esc(m.archivo) + " · Radicado <b>" + (esc(m.radicado) || "<span style='color:#c00'>no encontrado</span>") + "</b> · <b>" + m.filas.length + "</b> contratos";
         }).join("<br>") + (st.memos.length > 1 ? "<br>Total: <b>" + n + "</b> contratos" : "");
-        if (!n) alerta("No se encontraron filas de contratos en los PDF. Verifique que sean memorandos con texto (no escaneados).");
-      } catch (err) { $("resumen-m11-pdf").textContent = ""; alerta(err.message); st.memos = []; }
-      actualizarBoton();
+        if (!n) alerta("No se encontraron contratos en los PDF. Verifique que sean memorandos con texto (no escaneados) y con la tabla de contratos.");
+      } catch (err) { $("resumen-" + s + "-pdf").textContent = ""; alerta(err.message); st.memos = []; }
+      boton();
     });
 
-    $("input-m11-cdp").addEventListener("change", function (e) {
+    $("input-" + s + "-cdp").addEventListener("change", function (e) {
       var file = e.target.files[0]; if (!file) return;
-      alerta(""); st.indice = null; actualizarBoton();
-      $("resumen-m11-cdp").textContent = "Leyendo reporte CDP…";
+      alerta(""); st.indice = null; boton();
+      $("resumen-" + s + "-cdp").textContent = "Leyendo reporte CDP…";
       var reader = new FileReader();
       reader.onload = function (ev) {
         try {
           var wb = root.XLSX.read(ev.target.result, { type: "array" });
           var aoa = root.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: "" });
           st.indice = indexarReporteCDP(aoa);
-          $("resumen-m11-cdp").innerHTML = "Filas: <b>" + st.indice.total + "</b> · CDP únicos: <b>" + st.indice.unicos + "</b>";
-        } catch (err) { $("resumen-m11-cdp").textContent = ""; alerta(err.message); }
-        actualizarBoton();
+          $("resumen-" + s + "-cdp").innerHTML = "Filas: <b>" + st.indice.total + "</b> · CDP únicos: <b>" + st.indice.unicos + "</b>";
+        } catch (err) { $("resumen-" + s + "-cdp").textContent = ""; alerta(err.message); }
+        boton();
       };
       reader.readAsArrayBuffer(file);
     });
 
-    $("btn-m11").addEventListener("click", async function () {
+    $("btn-" + s).addEventListener("click", async function () {
       alerta(""); estado(true); this.disabled = true;
       try {
         var filas = [];
         st.memos.forEach(function (m) { filas = filas.concat(m.filas); });
-        st.resultado = cruzar(filas, st.indice);
-        var buf = await generarExcel(root.ExcelJS, st.resultado);
-        var rad = st.memos.length === 1 && st.memos[0].radicado ? "_" + st.memos[0].radicado : "";
-        var a = document.createElement("a");
-        a.href = URL.createObjectURL(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-        a.download = "MEMORANDO_SOLICITUD_CRP" + rad + ".xlsx";
-        document.body.appendChild(a); a.click(); a.remove();
-        pintarResultados(st.resultado);
+        var r = cfg.procesar(filas, st.indice);
+        descargar(await cfg.excel(r), cfg.nombre(st.memos));
+        cfg.pintar(r);
+        $("resultados-" + s).classList.add("visible");
       } catch (err) { alerta(err.message || String(err)); }
-      estado(false); actualizarBoton();
+      estado(false); boton();
     });
   }
 
-  function pintarResultados(r) {
+  function pintarCRP(r) {
     var ok = r.filter(function (x) { return x.reserva; }).length;
-    var c145 = r.filter(function (x) { return x.codigo === "145"; }).length;
-    var c148 = r.filter(function (x) { return x.codigo === "148"; }).length;
     var obs = r.filter(function (x) { return x.observaciones; }).length;
     var tot = r.reduce(function (a, x) { return a + (Number(x.valor_adicion) || 0); }, 0);
-    function met(t, v, ac) { return '<div class="metrica-card' + (ac ? " acento-" + ac : "") + '"><div class="metrica-valor">' + v + '</div><div class="metrica-etiqueta">' + t + "</div></div>"; }
     $("metricas-m11").innerHTML = met("Contratos", r.length) + met("CDP cruzados", ok + " / " + r.length, ok === r.length ? "verde" : "rojo") +
-      met("Código 145", c145, "ocre") + met("Código 148", c148, "ocre") + met("Con observaciones", obs, obs ? "rojo" : "verde") + met("Total adiciones", "$ " + fmt(tot));
+      met("Código 145", r.filter(function (x) { return x.codigo === "145"; }).length, "ocre") +
+      met("Código 148", r.filter(function (x) { return x.codigo === "148"; }).length, "ocre") +
+      met("Con observaciones", obs, obs ? "rojo" : "verde") + met("Total adiciones", "$ " + fmt(tot));
     $("tabla-m11").innerHTML = '<table class="tabla-m11"><thead><tr><th>Contrato</th><th>Contratista</th><th>No. CDP</th><th>Valor adición</th><th>Importe</th><th>Anul.</th><th>reserva</th><th>Pos</th><th>Fondo</th><th>Pos pres</th><th>Radicado</th><th>Cód.</th><th>Observaciones</th></tr></thead><tbody>' +
       r.map(function (x) {
         return "<tr" + (x.observaciones ? ' class="m11-obs"' : "") + "><td>" + esc(x.contrato) + "</td><td>" + esc(x.contratista) + "</td><td>" + esc(x.no_cdp) +
           '</td><td class="num">' + fmt(x.valor_adicion) + '</td><td class="num">' + fmt(x.importe) + '</td><td class="num">' + fmt(x.anulaciones) + "</td><td>" + esc(x.reserva) +
           "</td><td>" + esc(x.pos) + "</td><td>" + esc(x.fondos) + "</td><td>" + esc(x.pos_pres) + "</td><td>" + esc(x.radicado) + "</td><td><b>" + esc(x.codigo) + "</b></td><td>" + esc(x.observaciones) + "</td></tr>";
       }).join("") + "</tbody></table>";
-    $("resultados-m11").classList.add("visible");
-    $("resultados-m11").style.display = "block";
+  }
+
+  function pintarCDP(r) {
+    var ok = r.filter(function (x) { return x.fondos; }).length;
+    var obs = r.filter(function (x) { return x.observaciones; }).length;
+    var tot = r.reduce(function (a, x) { return a + (Number(x.valor_adicion) || 0); }, 0);
+    $("metricas-m11c").innerHTML = met("Contratos", r.length) + met("Cruzados por contrato", ok + " / " + r.length, ok === r.length ? "verde" : "rojo") +
+      met("Código 145", r.filter(function (x) { return x.codigo === "145"; }).length, "ocre") +
+      met("Código 148", r.filter(function (x) { return x.codigo === "148"; }).length, "ocre") +
+      met("Con observaciones", obs, obs ? "rojo" : "verde") + met("Total adiciones", "$ " + fmt(tot));
+    $("tabla-m11c").innerHTML = '<table class="tabla-m11"><thead><tr><th>Proyecto</th><th>Contrato</th><th>Contratista</th><th>Valor adición</th><th>Cód.</th><th>Pos pres</th><th>Fondo</th><th>Elemento PEP</th><th>Radicado</th><th>Observaciones</th></tr></thead><tbody>' +
+      r.map(function (x) {
+        return "<tr" + (x.observaciones ? ' class="m11-obs"' : "") + "><td>" + esc(x.proyecto) + "</td><td>" + esc(x.contrato) + "</td><td>" + esc(x.contratista) +
+          '</td><td class="num">' + fmt(x.valor_adicion) + "</td><td><b>" + esc(x.codigo) + "</b></td><td>" + esc(x.pos_pres) + "</td><td>" + esc(x.fondos) +
+          "</td><td>" + esc(x.pep) + "</td><td>" + esc(x.radicado) + "</td><td>" + esc(x.observaciones) + "</td></tr>";
+      }).join("") + "</tbody></table>";
+  }
+
+  function nombreConRadicado(base, memos) {
+    return base + (memos.length === 1 && memos[0].radicado ? "_" + memos[0].radicado : "") + ".xlsx";
+  }
+
+  function iniciar() {
+    var vista = $("vista-cdpcrp-vigencia");
+    if (!vista) return;
+    // Pestañas CRP / CDP
+    Array.prototype.forEach.call(vista.querySelectorAll(".m11-tab"), function (tab) {
+      tab.addEventListener("click", function () {
+        vista.querySelectorAll(".m11-tab").forEach(function (t) { t.classList.remove("activo"); });
+        vista.querySelectorAll(".m11-panel").forEach(function (p) { p.classList.remove("activo"); });
+        tab.classList.add("activo");
+        $(tab.dataset.panel).classList.add("activo");
+        if ($("titulo-modulo")) $("titulo-modulo").textContent = "CDP_CRP Vigencia · " + tab.textContent.trim();
+      });
+    });
+    montarPanel({
+      s: "m11",
+      leerMemo: async function (f) { var p = await leerPaginas(f, false); return parsearMemorando(p.map(function (x) { return x.items; }), f.name); },
+      procesar: cruzar,
+      excel: function (r) { return generarExcel(root.ExcelJS, r); },
+      nombre: function (m) { return nombreConRadicado("MEMORANDO_SOLICITUD_CRP", m); },
+      pintar: pintarCRP
+    });
+    if ($("btn-m11c")) montarPanel({
+      s: "m11c",
+      leerMemo: async function (f) { return parsearSolicitudCDP(await leerPaginas(f, true), f.name); },
+      procesar: cruzarPorContrato,
+      excel: function (r) { return generarExcelCDP(root.ExcelJS, r); },
+      nombre: function (m) { return nombreConRadicado("SOLICITUD_CDP_PRORROGA_ADICION", m); },
+      pintar: pintarCDP
+    });
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar); else iniciar();
