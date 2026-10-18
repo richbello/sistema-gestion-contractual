@@ -160,7 +160,9 @@
     posicion:     ["No.Posición CDP", "N° Posición CDP", "No. Posición CDP"],
     concepto:     ["Cod.Concepto Gasto"],
     cadena:       ["Cadena"],
-    pep:          ["Elemento PEP"]
+    pep:          ["Elemento PEP"],
+    id_responsable: ["ID Responsable"],
+    id_solicitante: ["ID Solicitante"]
   };
 
   // aoa: matriz (primera fila = encabezados; si no, se busca la fila de encabezados)
@@ -231,6 +233,8 @@
         pos_pres: reg ? (reg.concepto === undefined ? "" : reg.concepto) : "",
         fondos: reg ? String(reg.fondo || "") : "",
         radicado: f.radicado || "",
+        id_responsable: reg ? String(reg.id_responsable || "") : "",
+        id_solicitante: reg ? String(reg.id_solicitante || "") : "",
         codigo: codigo,
         observaciones: obs.join(" · "),
         archivo: f.archivo || ""
@@ -259,7 +263,7 @@
     { h: "OBSERVACIONES", k: "observaciones", w: 40, wrap: true }
   ];
 
-  async function generarExcel(ExcelJS, filas) {
+  async function generarExcel(ExcelJS, filas, opciones) {
     var wb = new ExcelJS.Workbook();
     wb.creator = "XBOG SMART · Módulo 11";
     var ws = wb.addWorksheet("base1", { views: [{ state: "frozen", ySplit: 1 }] });
@@ -304,7 +308,31 @@
       tot.eachCell(function (cell) { cell.font = { bold: true, size: 9 }; });
     }
     ws.autoFilter = { from: "A1", to: { row: 1, column: COLUMNAS.length } };
+    hojaDatosSAP(wb, filas, opciones || {});
     return wb.xlsx.writeBuffer();
+  }
+
+  function dosDig(n) { return ("0" + n).slice(-2); }
+  // Hoja con el mismo formato de la plantilla de la macro LlenarSAP (copiar A2:L y pegar en DATOS)
+  function hojaDatosSAP(wb, filas, op) {
+    var hoy = op.hoy || new Date();
+    var fIni = dosDig(hoy.getDate()) + "." + dosDig(hoy.getMonth() + 1) + "." + hoy.getFullYear();
+    var fFin = "31.12." + hoy.getFullYear();
+    var ws = wb.addWorksheet("DATOS_SAP", { views: [{ state: "frozen", ySplit: 1 }] });
+    var cab = ["CONTRATO", "Tipo de compromiso", "Número de Compromiso", "Fecha Inicial", "Fecha Final", "Tipo de pago",
+               "Mod. de selección", "BP Beneficiario", "Tipo Doc.", "Identif.", "ID Responsable", "ID Solicitante", "ESTADO"];
+    var anchos = [12, 18, 20, 13, 13, 13, 16, 16, 10, 15, 16, 16, 22];
+    ws.columns = cab.map(function (h, i) { return { header: h, width: anchos[i] }; });
+    ws.getRow(1).eachCell(function (c) {
+      c.font = { bold: true, color: { argb: "FFFFFFFF" } };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F3864" } };
+      c.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    });
+    filas.forEach(function (f) {
+      var row = ws.addRow([f.contrato, f.codigo || "", f.contrato, fIni, fFin, op.tipoPago || "02", op.modSeleccion || "10",
+                           "", "CC", f.cc || "", f.id_responsable || "", f.id_solicitante || "", ""]);
+      row.eachCell({ includeEmpty: true }, function (c) { c.numFmt = "@"; });
+    });
   }
 
   /* ================= ELABORACIÓN DE CDP (adiciones y prórrogas) ================= */
@@ -684,7 +712,12 @@
       s: "m11",
       leerMemo: async function (f) { var p = await leerPaginas(f, false); return parsearMemorando(p.map(function (x) { return x.items; }), f.name); },
       procesar: cruzar,
-      excel: function (r) { return generarExcel(root.ExcelJS, r); },
+      excel: function (r) {
+        return generarExcel(root.ExcelJS, r, {
+          tipoPago: ($("m11-tipopago") && $("m11-tipopago").value.trim()) || "02",
+          modSeleccion: ($("m11-modsel") && $("m11-modsel").value.trim()) || "10"
+        });
+      },
       nombre: function (m) { return nombreConRadicado("MEMORANDO_SOLICITUD_CRP", m); },
       pintar: pintarCRP
     });

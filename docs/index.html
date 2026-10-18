@@ -1242,6 +1242,8 @@
         table.tabla-m11 td:last-child { white-space:normal; min-width:240px; }
         table.tabla-m11 tr.m11-obs td { background:#FFF4F2; }
         table.tabla-m11 tr.m11-obs td:last-child { color:var(--rojo-600); }
+        .m11-sap { margin-top:20px; padding:12px 14px; background:var(--papel-alt); border:1px solid var(--tinta-100); border-radius:8px; display:flex; flex-wrap:wrap; gap:14px; align-items:center; font-size:.86rem; color:#475569; }
+        .m11-sap input { width:56px; margin-left:6px; padding:5px 8px; border:1px solid var(--tinta-300); border-radius:6px; font-family:var(--fuente-dato); }
         #vista-cdpcrp-vigencia .metrica-valor { font-size:18px; white-space:nowrap; }
       </style>
 
@@ -1285,6 +1287,12 @@
                 <div class="lista-archivos" id="lista-m11-cdp"></div>
                 <div id="resumen-m11-cdp" class="m11-resumen"></div>
               </div>
+            </div>
+            <div class="m11-sap">
+              <strong>Valores para SAP (hoja DATOS_SAP):</strong>
+              <label>Tipo de pago <input id="m11-tipopago" value="02" maxlength="4"></label>
+              <label>Mod. de selección <input id="m11-modsel" value="10" maxlength="4"></label>
+              <span>Fecha inicial = hoy · Fecha final = 31.12 del año · se pueden cambiar en el Excel</span>
             </div>
             <div class="barra-acciones">
               <button type="button" class="btn btn-primario" id="btn-m11" disabled>
