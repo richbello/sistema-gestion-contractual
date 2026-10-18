@@ -61,6 +61,7 @@
       <button class="nav-item" data-vista="exogena"><span class="nav-numero">08</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 18h4M9 12h2"/></svg> Reportes Exógena</button>
       <button class="nav-item" data-vista="vigilancia-fiscal"><span class="nav-numero">09</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12l4 4 12-12"/><path d="M12 2l7 4v6c0 5-3 8-7 10-4-2-7-5-7-10V6z"/></svg> Vigilancia Fiscal IA</button>
       <button class="nav-item" data-vista="sivicof"><span class="nav-numero">10</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h10l6 6v10H4z"/><path d="M14 4v6h6"/><path d="M8 14h8M8 17h5"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/></svg> Reportes SIVICOF</button>
+      <button class="nav-item" data-vista="cdpcrp-vigencia"><span class="nav-numero">11</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9h18M8 13h3M8 16h3M14 13l2 2 3-3"/></svg> CDP_CRP Vigencia</button>
     </nav>
 
     <nav class="nav-modulos" style="margin-top: 20px; border-top: 1px solid #ddd; padding-top: 15px;">
@@ -1224,6 +1225,79 @@
       </form>
     </section>
 
+    <!-- ===================== VISTA 11: CDP_CRP Vigencia ===================== -->
+    <section class="vista" id="vista-cdpcrp-vigencia" hidden>
+      <style>
+        .tabla-m11-wrap { margin-top:18px; border:1px solid var(--tinta-100); border-radius:8px; overflow:auto; max-height:460px; }
+        table.tabla-m11 { width:100%; border-collapse:collapse; font-size:12px; }
+        table.tabla-m11 thead th { position:sticky; top:0; background:var(--azul-900); color:#fff; padding:8px 10px; text-align:left; font-size:11px; text-transform:uppercase; white-space:nowrap; }
+        table.tabla-m11 td { padding:7px 10px; border-top:1px solid var(--tinta-100); vertical-align:top; white-space:nowrap; }
+        table.tabla-m11 td:nth-child(2) { white-space:normal; min-width:170px; }
+        table.tabla-m11 td:last-child { white-space:normal; min-width:240px; }
+        #metricas-m11 .metrica-valor { font-size:18px; white-space:nowrap; }
+        table.tabla-m11 td.num { text-align:right; font-family:var(--fuente-dato); white-space:nowrap; }
+        table.tabla-m11 tr.m11-obs td { background:#FFF4F2; }
+        table.tabla-m11 tr.m11-obs td:last-child { color:var(--rojo-600); }
+      </style>
+
+      <div class="intro-modulo">
+        <span class="paso-eyebrow">Elaboración de CRP · Adiciones y prórrogas</span>
+        <h2>CDP_CRP Vigencia</h2>
+        <p>Carga los memorandos de <strong>Solicitud de expedición de CRP</strong> (PDF) y el <strong>Reporte CDP</strong> de BOGDATA. El sistema cruza cada No. CDP y genera el Excel con reserva (No. Interno CDP), posición, objeto, fondo, importe, anulaciones, radicado y código 145/148. Todo se procesa en tu navegador.</p>
+      </div>
+
+      <form class="panel" id="form-m11" onsubmit="return false;">
+        <div class="panel-acento-superior"></div>
+        <div class="panel-cuerpo">
+          <div class="grid-form">
+            <div class="campo">
+              <label>1 · Memorandos de solicitud CRP (PDF)</label>
+              <div class="ayuda">Uno o varios PDF. Se extrae la tabla CTO · Contratista · CC · Rubro · No. CDP · Valores, y el Radicado No. 2026 55…</div>
+              <div class="dropzone" id="drop-m11-pdf">
+                <input type="file" id="input-m11-pdf" accept=".pdf" multiple required>
+                <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+                <div class="dropzone-texto"><strong>Arrastra los PDF</strong> o haz clic para seleccionarlos</div>
+                <div class="dropzone-detalle">.pdf · uno o varios archivos</div>
+              </div>
+              <div class="lista-archivos" id="lista-m11-pdf"></div>
+              <div id="resumen-m11-pdf" style="margin-top:10px;color:#475569;font-size:.88rem;line-height:1.6"></div>
+            </div>
+            <div class="campo">
+              <label>2 · Reporte CDP (BOGDATA)</label>
+              <div class="ayuda">Export del reporte CDP de la vigencia. Se cruza por <strong>No. CDP</strong> y trae No.Interno CDP, No.Posición CDP, Objeto, Fondo, Valor, Anulaciones y Cod.Concepto Gasto.</div>
+              <div class="dropzone" id="drop-m11-cdp">
+                <input type="file" id="input-m11-cdp" accept=".xlsx,.xls" required>
+                <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+                <div class="dropzone-texto"><strong>Arrastra el archivo</strong> o haz clic para seleccionarlo</div>
+                <div class="dropzone-detalle">.xlsx · un solo archivo</div>
+              </div>
+              <div class="lista-archivos" id="lista-m11-cdp"></div>
+              <div id="resumen-m11-cdp" style="margin-top:10px;color:#475569;font-size:.88rem"></div>
+            </div>
+          </div>
+
+          <div class="barra-acciones">
+            <button type="button" class="btn btn-primario" id="btn-m11" disabled>
+              <svg class="icono-btn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              Generar Excel CRP
+            </button>
+            <div class="estado-proceso" id="estado-m11"><span class="spinner"></span> Cruzando con el reporte CDP…</div>
+          </div>
+
+          <div class="alerta alerta-error" id="alerta-m11"></div>
+
+          <div class="resultados" id="resultados-m11">
+            <div class="resultados-cabecera">
+              <svg class="sello-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>
+              <h3>Excel MEMORANDO_SOLICITUD_CRP generado</h3>
+            </div>
+            <div class="metricas-grid" id="metricas-m11"></div>
+            <div class="tabla-m11-wrap" id="tabla-m11"></div>
+          </div>
+        </div>
+      </form>
+    </section>
+
   </main>
 </div>
 
@@ -1246,6 +1320,7 @@
   <script src="static/js/modulo-12-oxp.js"></script>
   <script src="static/js/modulo-10-exogena.js"></script>
 <script src="static/js/modulo-10-sivicof.js"></script>
+<script src="static/js/modulo-11-cdp-crp-vigencia.js"></script>
 
 <script>
 // Vigilancia Fiscal - Módulo 09

@@ -37,6 +37,7 @@ const MODULOS = {
   exogena:       { eyebrow: "Módulo 08 · Reportes Exógena", titulo: "Reportes Exógena" },
   "vigilancia-fiscal": { eyebrow: "Módulo 09 · Vigilancia Fiscal IA", titulo: "Vigilancia Fiscal IA" },
   sivicof:       { eyebrow: "Módulo 10 · Reportes SIVICOF", titulo: "Reportes SIVICOF" },
+  "cdpcrp-vigencia": { eyebrow: "Módulo 11 · CDP_CRP Vigencia", titulo: "CDP_CRP Vigencia · Elaboración de CRP" },
 };
 /* ---------------------------- Navegación ---------------------------- */
 function cambiarVista(idVista) {
