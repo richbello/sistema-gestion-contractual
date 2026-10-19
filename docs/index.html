@@ -50,6 +50,8 @@
         <button class="nav-item nav-sub" data-vista="pac"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg> Cuadre PAC</button>
         <button class="nav-item nav-sub" data-vista="validacion"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/></svg> Validación de plantilla</button>
         <a class="nav-item nav-sub" href="cuentas_bancarias.html" target="_blank" rel="noopener" style="text-decoration:none;"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg> Cuentas bancarias</a>
+        <span class="nav-subgrupo-titulo">Servicios y Jurídicos</span>
+        <button class="nav-item nav-sub" data-vista="pac-sj"><span class="nav-numero"></span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg> Cuadre PAC Serv. y Jur.</button>
       </div>
 
       <button class="nav-item" data-vista="estadocuenta"><span class="nav-numero">02</span><svg class="nav-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 9v11"/><circle cx="6.3" cy="6.5" r="0.6" fill="currentColor" stroke="none"/></svg> Estados de Cuenta</button>
@@ -335,6 +337,111 @@
       </form>
     </section>
 
+
+
+    <!-- ===================== VISTA 3B: CUADRE PAC SERVICIOS Y JURÍDICOS ===================== -->
+    <section class="vista" id="vista-pac-sj" hidden>
+      <form class="panel" id="form-pac-sj">
+        <div class="panel-acento-superior"></div>
+        <div class="panel-cuerpo">
+          <div class="grid-form una-col" style="margin-bottom:18px;">
+            <div class="campo">
+              <label>Reporte CRP actualizado</label>
+              <div class="ayuda">Súbelo en cada cuadre (cambia con cada periodo). De aquí se trae Rubro y Fondos por N° Interno CRP + N° Posición CRP.</div>
+              <div class="dropzone" id="drop-crp-pac-sj">
+                <input type="file" id="input-crp-pac-sj" accept=".xlsx,.xls" required>
+                <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+                <div class="dropzone-texto"><strong>Arrastra el Reporte CRP</strong> o haz clic para seleccionarlo</div>
+                <div class="dropzone-detalle">.xlsx</div>
+              </div>
+              <div class="lista-archivos" id="lista-crp-pac-sj"></div>
+            </div>
+          </div>
+
+          <div class="grid-form">
+            <div class="campo">
+              <label>Plantilla de pagos · Servicios / Jurídicos</label>
+              <div class="ayuda">Consolidado de servicios públicos / jurídicos. Se toma cada fila P40: RP Doc Presupuestal, Posc Doc Pres e importe (la P31 es el total del pago).</div>
+              <div class="dropzone" id="drop-plantilla-pac-sj">
+                <input type="file" id="input-plantilla-pac-sj" accept=".xlsx,.xls" required>
+                <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+                <div class="dropzone-texto"><strong>Arrastra el archivo</strong> o haz clic para seleccionarlo</div>
+                <div class="dropzone-detalle">.xlsx</div>
+              </div>
+              <div class="lista-archivos" id="lista-plantilla-pac-sj"></div>
+            </div>
+            <div class="campo">
+              <label>Reporte PAC</label>
+              <div class="ayuda">Reporte oficial de disponibilidad PAC (hoja "Data").</div>
+              <div class="dropzone" id="drop-reporte-pac-sj">
+                <input type="file" id="input-reporte-pac-sj" accept=".xlsx,.xls" required>
+                <svg class="dropzone-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+                <div class="dropzone-texto"><strong>Arrastra el archivo</strong> o haz clic para seleccionarlo</div>
+                <div class="dropzone-detalle">.xlsx</div>
+              </div>
+              <div class="lista-archivos" id="lista-reporte-pac-sj"></div>
+            </div>
+          </div>
+
+          <div class="grid-form una-col" style="margin-top:22px;">
+            <div class="campo">
+              <label>Mes a evaluar</label>
+              <input type="text" id="input-mes-pac-sj" placeholder="Ej. OCTUBRE" required style="text-transform:uppercase;">
+              <div class="ayuda">Debe coincidir con el período presupuestal del reporte PAC.</div>
+            </div>
+          </div>
+
+          <div class="barra-acciones">
+            <button type="submit" class="btn btn-primario" id="btn-pac-sj">
+              <svg class="icono-btn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              Realizar cuadre
+            </button>
+            <div class="estado-proceso" id="estado-pac-sj"><span class="spinner"></span> Cruzando imputaciones contra el PAC…</div>
+          </div>
+
+          <div class="alerta alerta-error" id="alerta-pac-sj"></div>
+          <div class="alerta alerta-aviso" id="aviso-pac-sj"></div>
+
+          <div class="resultados" id="resultados-pac-sj">
+            <div class="resultados-cabecera">
+              <svg class="sello-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6"/></svg>
+              <h3>Cuadre PAC Servicios y Jurídicos completado</h3>
+            </div>
+            <div class="metricas-grid" id="metricas-pac-sj"></div>
+
+            <h4 style="margin:18px 0 0;font-size:13px;color:var(--azul-950);">Cuadre por Rubro + Fondo</h4>
+            <div class="tabla-wrap">
+              <table class="tabla-datos">
+                <thead><tr><th>Rubro</th><th>Fondos</th><th>Importe total</th><th>Disponibilidad PAC</th><th>Diferencia</th><th>Cobertura</th></tr></thead>
+                <tbody id="tabla-pac-sj-body"></tbody>
+              </table>
+            </div>
+
+            <h4 style="margin:22px 0 0;font-size:13px;color:var(--azul-950);">Detalle CRP + posición</h4>
+            <div class="tabla-wrap" style="max-height:420px;overflow:auto;">
+              <table class="tabla-datos">
+                <thead><tr><th>RP Doc Presupuestal</th><th>Posc Doc Pres</th><th>crp</th><th>Importe</th><th>Rubro</th><th>Fondos</th><th>Pago · referencia</th><th>P40 = P31</th><th>Cobertura</th></tr></thead>
+                <tbody id="tabla-pac-sj-detalle"></tbody>
+              </table>
+            </div>
+
+            <div class="descarga-card" style="margin-top:18px;">
+              <div class="descarga-info">
+                <svg class="descarga-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+                <div>
+                  <div class="descarga-nombre">Cuadre_PAC_Servicios_Juridicos.xlsx</div>
+                  <div class="descarga-detalle">Hojas "Cuadre" y "Detalle CRP"</div>
+                </div>
+              </div>
+              <a class="btn btn-dorado" id="link-descarga-pac-sj">
+                <svg class="icono-btn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+                Descargar Excel
+              </a>
+            </div>
+          </div>
+        </div>
+      </form>
+    </section>
 
     <!-- ===================== VISTA 4: ESTADO DE CUENTA ===================== -->
         <section class="vista" id="vista-estadocuenta" hidden>
@@ -1375,6 +1482,7 @@
 <script src="config.js"></script>
 <script src="static/js/auth-api.js"></script>
 <script src="static/js/main.js"></script>
+<script src="static/js/modulo-cuadre-pac-sj.js"></script>
 <script src="static/js/modulo-extraccion-sipago.js"></script>
 <!-- <script src="static/js/modulo-04.js"></script> DESACTIVADO: flujo viejo que llamaba a procesar-lite y descargaba archivo incorrecto. El Modulo 04 activo vive en main.js -->
 <script src="static/js/modulo-05.js"></script>

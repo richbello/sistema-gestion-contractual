@@ -42,6 +42,7 @@ def create_app():
     from .routes.extraccion import extraccion_bp
     from .routes.plantilla_pagos import plantilla_bp
     from .routes.cuadre_pac import cuadre_bp
+    from .routes.cuadre_pac_sj import cuadre_sj_bp
     from .routes.estado_cuenta import estado_cuenta_bp
     from .routes.cuentas_bancarias import cuentas_bp
     from .routes.validacion_plantilla import validacion_bp
@@ -55,6 +56,7 @@ def create_app():
     app.register_blueprint(extraccion_bp, url_prefix="/api/extraccion")
     app.register_blueprint(plantilla_bp, url_prefix="/api/plantilla-pagos")
     app.register_blueprint(cuadre_bp, url_prefix="/api/cuadre-pac")
+    app.register_blueprint(cuadre_sj_bp, url_prefix="/api/cuadre-pac-sj")
     app.register_blueprint(estado_cuenta_bp, url_prefix="/api/estado-cuenta")
     app.register_blueprint(cuentas_bp, url_prefix="/api/cuentas-bancarias")
     app.register_blueprint(validacion_bp, url_prefix="/api/validacion-plantilla")

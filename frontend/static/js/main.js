@@ -25,6 +25,7 @@ const MODULOS = {
 
   plantilla:     { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Plantilla de pagos" },
   pac:           { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Cuadre PAC" },
+  "pac-sj":      { eyebrow: "Módulo 1 · Trámite de Pagos · Servicios y Jurídicos", titulo: "Cuadre PAC Servicios y Jurídicos" },
   validacion:    { eyebrow: "Módulo 1 · Trámite de Pagos", titulo: "Validación de plantilla" },
   estadocuenta:  { eyebrow: "Módulo 02 · Estados de Cuenta", titulo: "Estados de Cuenta" },
   historico:     { eyebrow: "Módulo 03 · Históricos de Pagos", titulo: "Históricos de Pagos" },
