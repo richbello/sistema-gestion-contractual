@@ -9,7 +9,10 @@
 !backend/app/plantillas/**
 !**/package.json
 !**/package-lock.json
-backend/datos_entrada/
+backend/datos_entrada/*
+# Fuentes publicas que el cruce VFI necesita en el servidor
+!backend/datos_entrada/siri_antecedentes.csv
+!backend/datos_entrada/boletin_responsables_fiscales.csv
 backend/app/data/
 
 # Dependency hell

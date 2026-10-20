@@ -1,8 +1,11 @@
 import sys, csv, re, json
+from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8")
 
-SIRI_CSV = "../datos_entrada/siri_antecedentes.csv"
-BOLETIN_CSV = "../datos_entrada/boletin_responsables_fiscales.csv"
+# Misma ruta que motor_cruce.py (backend/datos_entrada), sin depender del cwd.
+DATOS = Path(__file__).resolve().parent / "datos_entrada"
+SIRI_CSV = DATOS / "siri_antecedentes.csv"
+BOLETIN_CSV = DATOS / "boletin_responsables_fiscales.csv"
 
 def norm(v):
     if v is None: return ""
