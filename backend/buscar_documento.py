@@ -13,6 +13,23 @@ def norm(v):
     if "-" in s: s = s.split("-")[0]
     return re.sub(r"[^0-9]", "", s)
 
+def dv_nit(base):
+    """Digito de verificacion DIAN para un NIT de 9 digitos."""
+    pesos = [71, 67, 59, 53, 47, 43, 41, 37, 29, 23, 19, 17, 13, 7, 3]
+    s = sum(int(d) * p for d, p in zip(reversed(base), reversed(pesos)))
+    r = s % 11
+    return r if r < 2 else 11 - r
+
+def claves_boletin(valor):
+    """El Boletin trae 'NIT 8020062581' (con DV pegado); SECOP II trae el NIT
+    sin DV. Se indexan las dos formas cuando el ultimo digito es un DV valido."""
+    doc = norm(valor)
+    claves = [doc] if doc else []
+    if str(valor).strip().upper().startswith("NIT") and len(doc) == 10 \
+            and dv_nit(doc[:9]) == int(doc[9]):
+        claves.append(doc[:9])
+    return claves
+
 def buscar(doc):
     doc = norm(doc)
     hallazgos = []
@@ -40,7 +57,7 @@ def buscar(doc):
     try:
         with open(BOLETIN_CSV, encoding="utf-8-sig") as f:
             for row in csv.DictReader(f):
-                if norm(row.get("documento","")) == doc:
+                if doc in claves_boletin(row.get("documento","")) or (len(doc) == 10 and doc[:9] in claves_boletin(row.get("documento",""))):
                     hallazgos.append({
                         "fuente": "Boletin (Contraloria)",
                         "nombre": row.get("nombre",""),

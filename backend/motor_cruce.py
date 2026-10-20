@@ -24,6 +24,23 @@ def norm(v):
     if "-" in s: s = s.split("-")[0]
     return re.sub(r"[^0-9]", "", s)
 
+def dv_nit(base):
+    """Digito de verificacion DIAN para un NIT de 9 digitos."""
+    pesos = [71, 67, 59, 53, 47, 43, 41, 37, 29, 23, 19, 17, 13, 7, 3]
+    s = sum(int(d) * p for d, p in zip(reversed(base), reversed(pesos)))
+    r = s % 11
+    return r if r < 2 else 11 - r
+
+def claves_boletin(valor):
+    """El Boletin trae 'NIT 8020062581' (con DV pegado); SECOP II trae el NIT
+    sin DV. Se indexan las dos formas cuando el ultimo digito es un DV valido."""
+    doc = norm(valor)
+    claves = [doc] if doc else []
+    if str(valor).strip().upper().startswith("NIT") and len(doc) == 10 \
+            and dv_nit(doc[:9]) == int(doc[9]):
+        claves.append(doc[:9])
+    return claves
+
 def parse_fecha(fecha_str):
     if not fecha_str: return None
     s = str(fecha_str).strip().split("T")[0]
@@ -59,9 +76,9 @@ def cargar_boletin():
         return bol
     with open(BOLETIN_CSV, encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
-            doc = norm(row.get("documento", ""))
-            if doc: bol.setdefault(doc, []).append(row)
-    log(f"Contraloria (Boletin): Boletin indexado: {len(bol)} documentos unicos")
+            for doc in claves_boletin(row.get("documento", "")):
+                bol.setdefault(doc, []).append(row)
+    log(f"Contraloria (Boletin): Boletin indexado: {len({id(r) for v in bol.values() for r in v})} registros")
     return bol
 
 def descargar_secop(entidad, max_reg):
@@ -149,7 +166,7 @@ def procesar(entidad, max_reg):
     alertas.sort(key=lambda a: orden.get(a["nivel"], 9))
     return {
         "entidad": entidad, "fecha_analisis": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "total_contratos": len(contratos), "registros_siri": len(siri), "registros_boletin": len(boletin),
+        "total_contratos": len(contratos), "registros_siri": len(siri), "registros_boletin": len({id(r) for v in boletin.values() for r in v}),
         "total_alertas": len(alertas),
         "criticas": len([a for a in alertas if a["nivel"]=="CRITICA"]),
         "altas": len([a for a in alertas if a["nivel"]=="ALTA"]),
