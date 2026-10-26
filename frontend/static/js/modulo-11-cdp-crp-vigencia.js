@@ -542,6 +542,7 @@
     var mismoCod = mismos.filter(function (reg) { return codigo && clasificarCodigo(reg.objeto) === codigo; });
     var base = mismoCod.length ? mismoCod : mismos;
     var fondo = moda(base, "fondo"), pos = moda(base, "concepto"), pep = moda(base, "pep");
+    var idSol = moda(mismos.length ? mismos : todos, "id_solicitante"), idResp = moda(mismos.length ? mismos : todos, "id_responsable");
     if (!mismos.length) obs.push("Sin CDP del proyecto " + (f.proyecto || "?") + " en el reporte: Fondo y Pos pres por completar");
     else {
       if (fondo.distintos > 1) obs.push("El proyecto tiene " + fondo.distintos + " fondos en el reporte; se tomó el más frecuente");
@@ -557,7 +558,7 @@
       tipo: "nueva", solicitud: f.solicitud, fecha_solicitud: f.fecha_solicitud, fecha_cdp: f.fecha_cdp,
       proyecto: f.proyecto, meta: f.meta, rubro: f.rubro, recurso: f.recurso, contrato: "", contratista: "",
       valor_adicion: f.valor_adicion, objeto: f.objeto, codigo: codigo, importe: f.valor_adicion,
-      plazo: f.plazo, forma_pago: f.forma_pago,
+      plazo: f.plazo, forma_pago: f.forma_pago, id_solicitante: idSol.v, id_responsable: idResp.v,
       pos_pres: pos.v === "" ? "" : pos.v, fondos: fondo.v, pep: pepV, radicado: f.radicado,
       cdp_existente: ya.length ? ya[0]._cdp : "", observaciones: obs.join(" · ")
     };
@@ -628,7 +629,26 @@
       });
     });
     var tot = filas.reduce(function (a, f) { return a + (Number(f.valor_adicion) || 0); }, 0);
+    hojaSapCDP(wb, filas);
     var t = ws.addRow([]); t.getCell(6).value = "TOTAL"; t.getCell(7).value = tot; t.getCell(7).numFmt = "#,##0"; t.font = { bold: true };
+  }
+
+  // "2026/10/24" → "24.10.2026" (formato de fecha del usuario SAP)
+  function fechaSAP(f) { var m = String(f || "").match(/(\d{4})\/(\d{2})\/(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : ""; }
+
+  // Hoja para la macro LlenarCDP (todo como texto: SAP lo recibe tal cual)
+  function hojaSapCDP(wb, filas) {
+    var ws = wb.addWorksheet("DATOS_SAP_CDP", { views: [{ state: "frozen", ySplit: 1 }] });
+    var cols = [["SOLICITUD", 11], ["Importe modif.", 14], ["Pos.presup.", 11], ["Fondos", 13], ["Elemento PEP", 27],
+                ["Número Oficio", 13], ["Fecha Oficio", 12], ["ID Solicitante", 14], ["ID Responsable", 14], ["Objeto", 60], ["ESTADO", 30]];
+    ws.columns = cols.map(function (c) { return { header: c[0], width: c[1] }; });
+    ws.getRow(1).eachCell(function (c) { c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F3864" } }; });
+    filas.forEach(function (f) {
+      var row = ws.addRow([f.solicitud, String(f.importe || f.valor_adicion || ""), String(f.pos_pres || ""), f.fondos || "", f.pep || "",
+        f.solicitud, fechaSAP(f.fecha_cdp || f.fecha_solicitud), String(f.id_solicitante || ""), String(f.id_responsable || ""),
+        String(f.objeto || "").replace(/\s+/g, " ").trim(), ""]);
+      row.eachCell(function (c) { c.numFmt = "@"; c.alignment = { vertical: "top" }; });
+    });
   }
 
   async function generarExcelCDP(ExcelJS, filas) {
