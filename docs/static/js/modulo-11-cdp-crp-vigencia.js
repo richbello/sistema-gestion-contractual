@@ -636,6 +636,8 @@
   // "2026/10/24" → "24.10.2026" (formato de fecha del usuario SAP)
   function fechaSAP(f) { var m = String(f || "").match(/(\d{4})\/(\d{2})\/(\d{2})/); return m ? m[3] + "." + m[2] + "." + m[1] : ""; }
 
+  var ID_SOLICITANTE_CDP = "1000302854", ID_RESPONSABLE_CDP = "1000835316";
+
   // Hoja para la macro LlenarCDP (todo como texto: SAP lo recibe tal cual)
   function hojaSapCDP(wb, filas) {
     var ws = wb.addWorksheet("DATOS_SAP_CDP", { views: [{ state: "frozen", ySplit: 1 }] });
@@ -645,7 +647,7 @@
     ws.getRow(1).eachCell(function (c) { c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F3864" } }; });
     filas.forEach(function (f) {
       var row = ws.addRow([f.solicitud, String(f.importe || f.valor_adicion || ""), String(f.pos_pres || ""), f.fondos || "", f.pep || "",
-        f.solicitud, fechaSAP(f.fecha_cdp || f.fecha_solicitud), String(f.id_solicitante || ""), String(f.id_responsable || ""),
+        "", "", ID_SOLICITANTE_CDP, ID_RESPONSABLE_CDP,          // Usme: oficio y fecha van vacíos; los ID son fijos
         String(f.objeto || "").replace(/\s+/g, " ").trim(), ""]);
       row.eachCell(function (c) { c.numFmt = "@"; c.alignment = { vertical: "top" }; });
     });
