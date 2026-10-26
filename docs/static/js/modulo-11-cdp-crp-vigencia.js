@@ -439,9 +439,12 @@
 
   // paginas: [{items:[...], rects:[...]}]
   function parsearSolicitudCDP(paginas, nombreArchivo) {
+    var nueva = parsearSolicitudSistema(paginas, nombreArchivo);
+    if (nueva) return nueva;
     var texto = paginas.map(function (p) { return p.items.map(function (i) { return i.str; }).join(" "); }).join("\n");
     var radicado = "", fecha = "";
-    var m = texto.match(/\b(20\d{2}55\d{6,10})\b/); if (m) radicado = m[1];
+    var m = texto.match(/Radicado\s*No\.?\s*:?\s*\*?\s*(20\d{2}\s*55[\d\s]{6,14}\d)/i) || texto.match(/\b(20\d{2}\s?55\s?\d{6,10})\b/);
+    if (m) radicado = m[1].replace(/\s/g, "");
     var f = texto.match(/Fecha\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]20\d{2})/i); if (f) fecha = f[1];
     var mapa = null, filas = [], sinBordes = false;
     paginas.forEach(function (p) {
@@ -471,11 +474,101 @@
     return { radicado: radicado, fecha: fecha, filas: filas, archivo: nombreArchivo || "", sinBordes: sinBordes && !filas.length };
   }
 
+
+  // Reconstruye las líneas de texto por posición (pdf.js no entrega el orden de lectura)
+  function lineasDeTexto(items) {
+    var it = items.filter(function (i) { return String(i.str || "").trim(); })
+                  .slice().sort(function (a, b) { return a.y - b.y || a.x - b.x; });
+    var lineas = [];
+    it.forEach(function (i) {
+      var u = lineas[lineas.length - 1];
+      if (u && Math.abs(i.y - u.y) <= 2.5) u.items.push(i); else lineas.push({ y: i.y, items: [i] });
+    });
+    return lineas.map(function (l) {
+      return l.items.sort(function (a, b) { return a.x - b.x; }).map(function (i) { return String(i.str).trim(); }).join(" ").replace(/\s+/g, " ");
+    });
+  }
+
+  // Formato "Solicitud de CDP" del sistema (solicitud_cdp.jrxml): contratación nueva, sin contrato ni radicado
+  function parsearSolicitudSistema(paginas, nombreArchivo) {
+    var lineas = [];
+    paginas.forEach(function (p) { lineas = lineas.concat(lineasDeTexto(p.items)); });
+    var texto = lineas.join("\n");
+    var sol = texto.match(/PARA LA SOLICITUD No\.?\s*(\d+)\s*DEL\s*(\d{4}\/\d{2}\/\d{2})/i);
+    if (!sol || !/SOLICITUD DE CDP DE FECHA/i.test(texto)) return null;
+    function campo(re) { var m = texto.match(re); return m ? m[1].replace(/\s+/g, " ").trim() : ""; }
+    var fechaCdp = campo(/SOLICITUD DE CDP DE FECHA\s*(\d{4}\/\d{2}\/\d{2})/i);
+    var objeto = campo(/OBJETO:\s*\n([\s\S]*?)\n\s*VALOR:/i);
+    var valor = aNumero(campo(/VALOR:\s*\$?\s*([\d.,]+)/i));
+    var plazo = campo(/PLAZO:\s*([^\n]*)/i);
+    var pago = campo(/FORMA DE PAGO:\s*([^\n]*)/i);
+    var meta = campo(/\bMeta:\s*([^\n]*)/i);
+    var gerente = campo(/Gerente:\s*([^\n]*)/i);
+    var solicitante = campo(/Solicitante:\s*([^\n]*)/i);
+    var filas = [], re = /Rubro:\s*(\S+)\s+([A-ZÁÉÍÓÚÑ ]*?)\s*([\d.]+(?:,\d{1,2})?)\s*$/gim, r;
+    while ((r = re.exec(texto))) {
+      var rubro = r[1], proyecto = (rubro.match(/(\d{4})$/) || [])[1] || "";
+      filas.push({
+        tipo: "nueva", solicitud: sol[1], fecha_solicitud: sol[2], fecha_cdp: fechaCdp,
+        proyecto: proyecto, meta: meta, rubro: rubro, recurso: r[2].trim(),
+        contrato: "", contratista: "", objeto: objeto,
+        valor_adicion: aNumero(r[3]), valor_total: valor, plazo: plazo, forma_pago: pago,
+        gerente: gerente, solicitante: solicitante,
+        radicado: sol[1], fecha_radicado: sol[2], archivo: nombreArchivo || ""
+      });
+    }
+    if (!filas.length && valor) {               // sin línea de rubro legible: al menos la solicitud
+      var pry = campo(/\n(\d{4}) [^\n]*?[\d.]+\s*$/m);
+      filas.push({ tipo: "nueva", solicitud: sol[1], fecha_solicitud: sol[2], fecha_cdp: fechaCdp, proyecto: pry, meta: meta,
+        rubro: "", recurso: "", contrato: "", contratista: "", objeto: objeto, valor_adicion: valor, valor_total: valor,
+        plazo: plazo, forma_pago: pago, gerente: gerente, solicitante: solicitante, radicado: sol[1], fecha_radicado: sol[2], archivo: nombreArchivo || "" });
+    }
+    return { formato: "sistema", radicado: sol[1], fecha: sol[2], filas: filas, archivo: nombreArchivo || "", etiqueta: "Solicitud" };
+  }
+
+  // Cruce de solicitudes nuevas: Fondo, Pos. pres. y PEP desde los CDP del mismo proyecto/rubro
+  function cruzarNueva(f, todos) {
+    var obs = [], codigo = clasificarCodigo(f.objeto);
+    if (!codigo) obs.push("No se pudo determinar el código 145/148");
+    var mismos = todos.filter(function (reg) {
+      var pep = String(reg.pep || ""), cad = String(reg.cadena || "");
+      return (f.rubro && cad.indexOf(f.rubro) >= 0) || (f.proyecto && pep.slice(-4) === f.proyecto);
+    });
+    function moda(lista, k) {
+      var c = {}, best = "", n = 0;
+      lista.forEach(function (x) { var v = x[k]; if (v === undefined || v === null || v === "") return; v = String(v); c[v] = (c[v] || 0) + 1; if (c[v] > n) { n = c[v]; best = v; } });
+      return { v: best, distintos: Object.keys(c).length };
+    }
+    var mismoCod = mismos.filter(function (reg) { return codigo && clasificarCodigo(reg.objeto) === codigo; });
+    var base = mismoCod.length ? mismoCod : mismos;
+    var fondo = moda(base, "fondo"), pos = moda(base, "concepto"), pep = moda(base, "pep");
+    if (!mismos.length) obs.push("Sin CDP del proyecto " + (f.proyecto || "?") + " en el reporte: Fondo y Pos pres por completar");
+    else {
+      if (fondo.distintos > 1) obs.push("El proyecto tiene " + fondo.distintos + " fondos en el reporte; se tomó el más frecuente");
+      if (pos.distintos > 1) obs.push("Varias Pos pres para este tipo de contrato; se tomó la más frecuente");
+    }
+    var pepV = pep.v || (f.proyecto ? "PM/0005/0101/4599000" + f.proyecto : "");
+    // ¿ya se expidió? mismo objeto y valor en el reporte
+    var obj = norm(f.objeto).slice(0, 80);
+    var ya = todos.filter(function (reg) { return aNumero(reg.valor) === f.valor_adicion && obj && norm(reg.objeto).indexOf(obj) >= 0; });
+    if (ya.length) obs.push("Posible CDP ya expedido: " + ya.map(function (x) { return x._cdp; }).join(", "));
+    if (f.valor_total && f.valor_total !== f.valor_adicion) obs.push("Valor solicitud (" + f.valor_total.toLocaleString("es-CO") + ") ≠ valor del rubro");
+    return {
+      tipo: "nueva", solicitud: f.solicitud, fecha_solicitud: f.fecha_solicitud, fecha_cdp: f.fecha_cdp,
+      proyecto: f.proyecto, meta: f.meta, rubro: f.rubro, recurso: f.recurso, contrato: "", contratista: "",
+      valor_adicion: f.valor_adicion, objeto: f.objeto, codigo: codigo, importe: f.valor_adicion,
+      plazo: f.plazo, forma_pago: f.forma_pago,
+      pos_pres: pos.v === "" ? "" : pos.v, fondos: fondo.v, pep: pepV, radicado: f.radicado,
+      cdp_existente: ya.length ? ya[0]._cdp : "", observaciones: obs.join(" · ")
+    };
+  }
+
   // Cruce por No. de contrato contra el Objeto del reporte CDP
   function cruzarPorContrato(filas, indice) {
     var todos = [];
     Object.keys(indice.mapa).forEach(function (k) { indice.mapa[k].forEach(function (reg) { reg._cdp = k; todos.push(reg); }); });
     return filas.map(function (f) {
+      if (f.tipo === "nueva") return cruzarNueva(f, todos);
       var obs = [], partes = f.contrato.split("-");
       var re = new RegExp("(^|\\D)0*" + parseInt(partes[0], 10) + "\\s*-\\s*" + partes[1] + "(\\D|$)");
       var cand = todos.filter(function (reg) { return re.test(String(reg.objeto || "")); });
@@ -509,9 +602,42 @@
     });
   }
 
+  function hojaNuevas(wb, filas) {
+    var ws = wb.addWorksheet("CDP Contratacion Nueva", { views: [{ state: "frozen", ySplit: 1 }] });
+    var cols = [
+      ["No. SOLICITUD", "solicitud", 13], ["FECHA SOLICITUD", "fecha_solicitud", 12], ["N° PROYECTO", "proyecto", 11],
+      ["META", "meta", 34], ["RUBRO", "rubro", 28], ["OBJETO", "objeto", 60], ["VALOR", "valor_adicion", 15],
+      ["PLAZO", "plazo", 18], ["FORMA DE PAGO", "forma_pago", 20], ["CÓDIGO", "codigo", 9], ["IMPORTE", "importe", 14],
+      ["POS PRES", "pos_pres", 10], ["FONDOS", "fondos", 12], ["ELEMENTO PEP", "pep", 28], ["OBSERVACIONES", "observaciones", 45]
+    ];
+    ws.columns = cols.map(function (c) { return { header: c[0], width: c[2] }; });
+    ws.getRow(1).eachCell(function (cell) { cell.font = { bold: true }; cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true }; });
+    filas.forEach(function (f) {
+      var row = ws.addRow(cols.map(function (c) {
+        var v = f[c[1]];
+        if (c[1] === "valor_adicion" || c[1] === "importe") return Number(v || 0);
+        if (c[1] === "pos_pres" || c[1] === "codigo") return v === "" || v === undefined ? "" : (isNaN(Number(v)) ? v : Number(v));
+        return v === undefined ? "" : v;
+      }));
+      row.eachCell(function (cell, n) {
+        var k = cols[n - 1][1];
+        if (k === "valor_adicion" || k === "importe") cell.numFmt = "#,##0";
+        if (k === "solicitud" || k === "rubro") cell.numFmt = "@";
+        cell.alignment = { vertical: "top", wrapText: k === "meta" || k === "objeto" || k === "observaciones" };
+        if (k === "observaciones") cell.font = { color: { argb: "FFC00000" } };
+      });
+    });
+    var tot = filas.reduce(function (a, f) { return a + (Number(f.valor_adicion) || 0); }, 0);
+    var t = ws.addRow([]); t.getCell(6).value = "TOTAL"; t.getCell(7).value = tot; t.getCell(7).numFmt = "#,##0"; t.font = { bold: true };
+  }
+
   async function generarExcelCDP(ExcelJS, filas) {
     var wb = new ExcelJS.Workbook();
     wb.creator = "XBOG SMART · Módulo 11";
+    var nuevas = filas.filter(function (f) { return f.tipo === "nueva"; });
+    filas = filas.filter(function (f) { return f.tipo !== "nueva"; });
+    if (nuevas.length) hojaNuevas(wb, nuevas);
+    if (!filas.length) return wb.xlsx.writeBuffer();
     var ws = wb.addWorksheet("CDP Prorroga Adicion", { views: [{ state: "frozen", ySplit: 1 }] });
     var cols = [
       ["N° PROYECTO", "proyecto", 12], ["META", "meta", 30], ["CONTRATO", "contrato", 12], ["CONTRATISTA", "contratista", 30],
@@ -542,7 +668,7 @@
   var Core = { norm: norm, aNumero: aNumero, claveCDP: claveCDP, clasificarCodigo: clasificarCodigo,
                parsearMemorando: parsearMemorando, indexarReporteCDP: indexarReporteCDP,
                cruzar: cruzar, generarExcel: generarExcel, COLUMNAS: COLUMNAS,
-               bordesDesdeOperadores: bordesDesdeOperadores, tablaPorBordes: tablaPorBordes, parsearSolicitudCDP: parsearSolicitudCDP,
+               bordesDesdeOperadores: bordesDesdeOperadores, tablaPorBordes: tablaPorBordes, parsearSolicitudCDP: parsearSolicitudCDP, parsearSolicitudSistema: parsearSolicitudSistema, lineasDeTexto: lineasDeTexto,
                cruzarPorContrato: cruzarPorContrato, generarExcelCDP: generarExcelCDP };
   root.M11Core = Core;
   if (typeof module !== "undefined" && module.exports) { module.exports = Core; return; }
@@ -621,9 +747,11 @@
         for (var i = 0; i < files.length; i++) st.memos.push(await cfg.leerMemo(files[i]));
         var n = st.memos.reduce(function (a, m) { return a + m.filas.length; }, 0);
         $("resumen-" + s + "-pdf").innerHTML = st.memos.map(function (m) {
+          if (m.formato === "sistema") return "📄 " + esc(m.archivo) + " · Solicitud <b>" + esc(m.radicado) + "</b> · <b>" + m.filas.length + "</b> rubro(s) · $ <b>" +
+            fmt(m.filas.reduce(function (a, x) { return a + x.valor_adicion; }, 0)) + "</b>";
           return "📄 " + esc(m.archivo) + " · Radicado <b>" + (esc(m.radicado) || "<span style='color:#c00'>no encontrado</span>") + "</b> · <b>" + m.filas.length + "</b> contratos";
         }).join("<br>") + (st.memos.length > 1 ? "<br>Total: <b>" + n + "</b> contratos" : "");
-        if (!n) alerta("No se encontraron contratos en los PDF. Verifique que sean memorandos con texto (no escaneados) y con la tabla de contratos.");
+        if (!n) alerta("No se encontraron contratos ni solicitudes en los PDF. Verifique que sean memorandos con texto (no escaneados) y con la tabla de contratos.");
       } catch (err) { $("resumen-" + s + "-pdf").textContent = ""; alerta(err.message); st.memos = []; }
       boton();
     });
@@ -679,13 +807,14 @@
     var ok = r.filter(function (x) { return x.fondos; }).length;
     var obs = r.filter(function (x) { return x.observaciones; }).length;
     var tot = r.reduce(function (a, x) { return a + (Number(x.valor_adicion) || 0); }, 0);
-    $("metricas-m11c").innerHTML = met("Contratos", r.length) + met("Cruzados por contrato", ok + " / " + r.length, ok === r.length ? "verde" : "rojo") +
+    var nN = r.filter(function (x) { return x.tipo === "nueva"; }).length;
+    $("metricas-m11c").innerHTML = met(nN === r.length ? "Solicitudes" : "Registros", r.length) + met("Con Fondo del reporte", ok + " / " + r.length, ok === r.length ? "verde" : "rojo") +
       met("Código 145", r.filter(function (x) { return x.codigo === "145"; }).length, "ocre") +
       met("Código 148", r.filter(function (x) { return x.codigo === "148"; }).length, "ocre") +
-      met("Con observaciones", obs, obs ? "rojo" : "verde") + met("Total adiciones", "$ " + fmt(tot));
-    $("tabla-m11c").innerHTML = '<table class="tabla-m11"><thead><tr><th>Proyecto</th><th>Contrato</th><th>Contratista</th><th>Valor adición</th><th>Cód.</th><th>Pos pres</th><th>Fondo</th><th>Elemento PEP</th><th>Radicado</th><th>Observaciones</th></tr></thead><tbody>' +
+      met("Con observaciones", obs, obs ? "rojo" : "verde") + met(nN === r.length ? "Total solicitado" : "Total", "$ " + fmt(tot));
+    $("tabla-m11c").innerHTML = '<table class="tabla-m11"><thead><tr><th>Proyecto</th><th>Contrato / Solicitud</th><th>Contratista / Objeto</th><th>Valor</th><th>Cód.</th><th>Pos pres</th><th>Fondo</th><th>Elemento PEP</th><th>Radicado</th><th>Observaciones</th></tr></thead><tbody>' +
       r.map(function (x) {
-        return "<tr" + (x.observaciones ? ' class="m11-obs"' : "") + "><td>" + esc(x.proyecto) + "</td><td>" + esc(x.contrato) + "</td><td>" + esc(x.contratista) +
+        return "<tr" + (x.observaciones ? ' class="m11-obs"' : "") + "><td>" + esc(x.proyecto) + "</td><td>" + esc(x.tipo === "nueva" ? "Sol. " + x.solicitud : x.contrato) + "</td><td>" + esc(x.tipo === "nueva" ? String(x.objeto).slice(0, 90) + (String(x.objeto).length > 90 ? "…" : "") : x.contratista) +
           '</td><td class="num">' + fmt(x.valor_adicion) + "</td><td><b>" + esc(x.codigo) + "</b></td><td>" + esc(x.pos_pres) + "</td><td>" + esc(x.fondos) +
           "</td><td>" + esc(x.pep) + "</td><td>" + esc(x.radicado) + "</td><td>" + esc(x.observaciones) + "</td></tr>";
       }).join("") + "</tbody></table>";
@@ -726,7 +855,10 @@
       leerMemo: async function (f) { return parsearSolicitudCDP(await leerPaginas(f, true), f.name); },
       procesar: cruzarPorContrato,
       excel: function (r) { return generarExcelCDP(root.ExcelJS, r); },
-      nombre: function (m) { return nombreConRadicado("SOLICITUD_CDP_PRORROGA_ADICION", m); },
+      nombre: function (m) {
+        var todasNuevas = m.length && m.every(function (x) { return x.formato === "sistema"; });
+        return nombreConRadicado(todasNuevas ? "SOLICITUD_CDP_CONTRATACION_NUEVA" : "SOLICITUD_CDP_PRORROGA_ADICION", m);
+      },
       pintar: pintarCDP
     });
   }

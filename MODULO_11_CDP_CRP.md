@@ -39,6 +39,15 @@ La tabla del PDF se lee por sus bordes. Cruce por **No. de contrato** buscado en
 
 Validado el 18-oct-2026 con el radicado 20265520010823: 8 contratos, 117 de 117 celdas iguales al formato manual.
 
+### Formato 2 · Solicitud de CDP del sistema (contratación nueva) — 26-oct-2026
+El submódulo detecta solo el formato. Si el PDF es la "Solicitud de CDP" del sistema (`solicitud_cdp.jrxml`:
+"SOLICITUD DE CDP DE FECHA … / PARA LA SOLICITUD No. … DEL …"), se lee por texto (líneas reconstruidas por posición) y sale la hoja
+**`CDP Contratacion Nueva`**: No. SOLICITUD, FECHA, N° PROYECTO, META, RUBRO, OBJETO, VALOR, PLAZO, FORMA DE PAGO, CÓDIGO, IMPORTE,
+POS PRES, FONDOS, ELEMENTO PEP, OBSERVACIONES. Fondo / Pos pres / PEP se toman de los CDP del reporte del mismo rubro o proyecto
+(el valor más frecuente, priorizando el mismo código 145/148); si el proyecto no tiene CDP en el reporte, PEP = PM/0005/0101/4599000 + proyecto
+y se marca la observación. También avisa si ya existe un CDP con el mismo objeto y valor.
+Validado con 12 solicitudes (157768 … 161925): 12/12 leídas, total $ 415.869.580.
+
 ## Llenado en BogData (SAP GUI)
 El scripting de SAP GUI está **deshabilitado por el servidor** en HEC-SDH S/4-PRD (DisabledByServer, verificado el 18-oct-2026).
 Por eso se usa la macro de Excel `LlenarSAP` (SendKeys), que escribe en "Campos adicionales de cabecera":
